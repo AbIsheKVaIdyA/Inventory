@@ -17,6 +17,14 @@ function readHashHasAuthTokens(): boolean {
   return q.has("access_token") && q.has("refresh_token");
 }
 
+/** Stale session / cookie race after logout sometimes surfaces this; don’t alarm users on the login page. */
+function sanitizeAuthUrlError(message: string | null): string | null {
+  if (!message) return null;
+  const t = message.trim();
+  if (/auth session missing/i.test(t)) return null;
+  return message;
+}
+
 async function routeAfterInviteSession(
   sb: ReturnType<typeof getSupabaseBrowserClient>,
   router: ReturnType<typeof useRouter>,
@@ -54,7 +62,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next")?.startsWith("/") ? searchParams.get("next")! : "/dashboard";
-  const errParam = searchParams.get("error");
+  const errParam = sanitizeAuthUrlError(searchParams.get("error"));
   const infoParam = searchParams.get("info");
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
@@ -63,7 +71,7 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(errParam ?? null);
+  const [error, setError] = useState<string | null>(errParam);
   const [authLinkFailed, setAuthLinkFailed] = useState(false);
   const [pendingHashAuth] = useState(readHashHasAuthTokens);
 
