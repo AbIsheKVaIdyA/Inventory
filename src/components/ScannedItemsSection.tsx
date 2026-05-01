@@ -4,6 +4,7 @@ import { ChevronDownIcon, Loader2Icon, MapPinIcon, Undo2Icon } from "lucide-reac
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { UndoScanAlert } from "@/components/UndoScanAlert";
 import type { Asset } from "@/types/asset";
 
 import { cn } from "@/lib/utils";
@@ -47,12 +48,12 @@ function groupAssetsByLocation(assets: Asset[]): { label: string; items: Asset[]
 function ScannedItemRow({
   asset,
   busy,
-  onUnscan,
+  onRequestUndo,
   showLocation = true,
 }: {
   asset: Asset;
   busy: boolean;
-  onUnscan: () => void;
+  onRequestUndo: () => void;
   showLocation?: boolean;
 }) {
   const locationText = asset.location?.trim();
@@ -81,13 +82,7 @@ function ScannedItemRow({
         disabled={busy}
         aria-busy={busy}
         onClick={() => {
-          if (
-            typeof window !== "undefined" &&
-            !window.confirm("Return this device to the queue?")
-          ) {
-            return;
-          }
-          void onUnscan();
+          if (!busy) onRequestUndo();
         }}
         className="mt-3 h-12 w-full rounded-xl border-orange-700/35 bg-transparent text-orange-200 hover:bg-orange-950/60 hover:text-orange-50"
       >
@@ -122,6 +117,7 @@ export function ScannedItemsSection({
   onUnscan,
 }: ScannedItemsSectionProps) {
   const [listMode, setListMode] = useState<ListMode>("recent");
+  const [undoTarget, setUndoTarget] = useState<Asset | null>(null);
 
   const locationGroups = useMemo(
     () => (listMode === "by_location" ? groupAssetsByLocation(assets) : null),
@@ -129,7 +125,18 @@ export function ScannedItemsSection({
   );
 
   return (
-    <section
+    <>
+      <UndoScanAlert
+        asset={undoTarget}
+        busy={undoTarget !== null && unscanningId === undoTarget.id}
+        onDismiss={() => setUndoTarget(null)}
+        onConfirmReturn={() => {
+          if (!undoTarget) return;
+          void onUnscan(undoTarget);
+          setUndoTarget(null);
+        }}
+      />
+      <section
       id="scanned-items-panel"
       className="rounded-2xl border border-border bg-card/50 shadow-md shadow-black/20 backdrop-blur-sm"
       aria-labelledby="scanned-heading"
@@ -188,7 +195,7 @@ export function ScannedItemsSection({
                 key={asset.id}
                 asset={asset}
                 busy={unscanningId === asset.id}
-                onUnscan={() => onUnscan(asset)}
+                onRequestUndo={() => setUndoTarget(asset)}
                 showLocation
               />
             ))}
@@ -225,7 +232,7 @@ export function ScannedItemsSection({
                       key={asset.id}
                       asset={asset}
                       busy={unscanningId === asset.id}
-                      onUnscan={() => onUnscan(asset)}
+                      onRequestUndo={() => setUndoTarget(asset)}
                       showLocation={false}
                     />
                   ))}
@@ -236,5 +243,6 @@ export function ScannedItemsSection({
         )}
       </div>
     </section>
+    </>
   );
 }
