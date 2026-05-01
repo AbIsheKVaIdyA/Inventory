@@ -21,6 +21,7 @@ import {
 } from "@/lib/location-filter";
 import { getSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase/browser-client";
 import { fetchAllInventoryItemRows } from "@/lib/supabase/fetch-all-inventory-items";
+import { cn } from "@/lib/utils";
 import type { Asset } from "@/types/asset";
 
 import { AssetRow } from "@/components/AssetRow";
@@ -404,7 +405,12 @@ export function AssetTable({ selectedUser, onSwitchUser }: AssetTableProps) {
     <div className="flex min-h-dvh flex-1 flex-col">
       <Header currentUser={selectedUser} onSwitchUser={onSwitchUser} />
 
-      <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-5 px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-5">
+      <main
+        className={cn(
+          "mx-auto flex w-full max-w-lg flex-1 flex-col gap-5 px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-5",
+          inventoryView === "scanned" && "max-sm:pb-[7.25rem]"
+        )}
+      >
         {mutationError ? (
           <section
             role="alert"
@@ -431,11 +437,11 @@ export function AssetTable({ selectedUser, onSwitchUser }: AssetTableProps) {
         ) : null}
 
         {!loading && !loadError && counts.total > 0 && inventoryView === "scanned" ? (
-          <div className="flex flex-col gap-4">
+          <div className="relative flex flex-col gap-4">
             <Button
               type="button"
               variant="outline"
-              className="h-12 w-full justify-center gap-2 rounded-2xl border-border bg-card/50 px-5 shadow-md shadow-black/20 sm:w-auto sm:justify-start"
+              className="h-12 w-full justify-center gap-2 rounded-2xl border-border bg-card/50 px-5 shadow-md shadow-black/20 max-sm:fixed max-sm:inset-x-4 max-sm:bottom-[max(0.75rem,env(safe-area-inset-bottom))] max-sm:z-[45] max-sm:border max-sm:bg-background/92 max-sm:shadow-black/35 max-sm:backdrop-blur-xl sm:static sm:w-auto sm:self-start sm:justify-start"
               onClick={() => setInventoryView("queue")}
               aria-label="Back to scanning queue"
             >

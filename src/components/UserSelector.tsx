@@ -38,9 +38,6 @@ export function UserSelector({ onSelect }: UserSelectorProps) {
         <h2 className="mt-2 text-balance text-3xl font-bold tracking-tight sm:text-[2rem]">
           Who&apos;s scanning?
         </h2>
-        <p className="mx-auto mt-3 max-w-sm text-pretty text-sm leading-relaxed text-muted-foreground">
-          Saved only on this phone or tablet. Switch person anytime after you sign in.
-        </p>
       </div>
 
       <ul className="relative grid grid-cols-1 gap-3">
