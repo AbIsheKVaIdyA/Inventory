@@ -38,7 +38,9 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="flex min-h-dvh flex-col bg-background">
-        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        <div className="flex min-h-0 flex-1 flex-col pb-[var(--site-footer-reserve)]">
+          {children}
+        </div>
         <SiteFooter />
       </body>
     </html>

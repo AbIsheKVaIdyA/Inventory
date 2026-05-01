@@ -86,6 +86,8 @@
   --sidebar-accent-foreground: oklch(0.96 0.005 285);
   --sidebar-border: oklch(0.26 0.02 285);
   --sidebar-ring: oklch(0.72 0.14 155);
+  /* Fixed footer strip (+ home indicator inset). Keep in sync with SiteFooter.tsx */
+  --site-footer-reserve: calc(2.125rem + env(safe-area-inset-bottom, 0px));
 }
 
 .dark {

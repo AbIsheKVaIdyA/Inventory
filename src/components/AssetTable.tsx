@@ -389,8 +389,9 @@ export function AssetTable({ selectedUser, onSwitchUser }: AssetTableProps) {
 
       <main
         className={cn(
-          "mx-auto flex w-full max-w-lg flex-1 flex-col gap-5 px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-5",
-          inventoryView === "scanned" && "max-sm:pb-[7.25rem]"
+          "mx-auto flex w-full max-w-lg flex-1 flex-col gap-5 px-4 pb-6 pt-5",
+          inventoryView === "scanned" &&
+            "max-sm:pb-[calc(var(--site-footer-reserve)+4.75rem)]"
         )}
       >
         {mutationError ? (
@@ -423,7 +424,7 @@ export function AssetTable({ selectedUser, onSwitchUser }: AssetTableProps) {
             <Button
               type="button"
               variant="outline"
-              className="h-12 w-full justify-center gap-2 rounded-2xl border-border bg-card/50 px-5 shadow-md shadow-black/20 max-sm:fixed max-sm:inset-x-4 max-sm:bottom-[max(0.75rem,env(safe-area-inset-bottom))] max-sm:z-[45] max-sm:border max-sm:bg-background/92 max-sm:shadow-black/35 max-sm:backdrop-blur-xl sm:static sm:w-auto sm:self-start sm:justify-start"
+              className="h-12 w-full justify-center gap-2 rounded-2xl border-border bg-card/50 px-5 shadow-md shadow-black/20 max-sm:fixed max-sm:inset-x-4 max-sm:bottom-[calc(var(--site-footer-reserve)+0.625rem)] max-sm:z-[45] max-sm:border max-sm:bg-background/92 max-sm:shadow-black/35 max-sm:backdrop-blur-xl sm:static sm:w-auto sm:self-start sm:justify-start"
               onClick={() => setInventoryView("queue")}
               aria-label="Back to scanning queue"
             >
