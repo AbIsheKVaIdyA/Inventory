@@ -4,7 +4,9 @@ import { Loader2Icon, LockIcon, ShieldCheckIcon } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, type FormEvent, useEffect, useState } from "react";
 
+import { AuthInviteProcessingOverlay } from "@/components/AuthInviteProcessingOverlay";
 import { Button } from "@/components/ui/button";
+import { hasCompletedInvitePassword, INVITE_PASSWORD_SET_KEY } from "@/lib/auth-invite-metadata";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase/browser-client";
 
@@ -16,11 +18,7 @@ export default function SetPasswordPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Suspense
-        fallback={
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-muted-foreground">
-            <Loader2Icon className="size-10 animate-spin" aria-hidden />
-          </div>
-        }
+        fallback={<AuthInviteProcessingOverlay title="Loading" subtitle="One moment." />}
       >
         <SetPasswordForm />
       </Suspense>
@@ -47,11 +45,19 @@ function SetPasswordForm() {
     let mounted = true;
     const sb = getSupabaseBrowserClient();
 
-    void sb.auth.getUser().then(({ data, error: userError }) => {
+    void sb.auth.getUser().then(async ({ data, error: userError }) => {
       if (!mounted) return;
       if (userError || !data.user) {
         const login = new URL("/login", window.location.origin);
         login.searchParams.set("error", "Invite link expired. Please request a new invite.");
+        login.searchParams.set("next", next);
+        router.replace(`${login.pathname}${login.search}`);
+        return;
+      }
+      if (hasCompletedInvitePassword(data.user)) {
+        await sb.auth.signOut();
+        const login = new URL("/login", window.location.origin);
+        login.searchParams.set("info", "already_registered");
         login.searchParams.set("next", next);
         router.replace(`${login.pathname}${login.search}`);
         return;
@@ -86,7 +92,10 @@ function SetPasswordForm() {
 
     try {
       const sb = getSupabaseBrowserClient();
-      const { error: updateError } = await sb.auth.updateUser({ password });
+      const { error: updateError } = await sb.auth.updateUser({
+        password,
+        data: { [INVITE_PASSWORD_SET_KEY]: true },
+      });
       if (updateError) throw updateError;
 
       router.replace(next);
@@ -101,10 +110,10 @@ function SetPasswordForm() {
 
   if (checkingSession) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-muted-foreground">
-        <Loader2Icon className="size-10 animate-spin" aria-hidden />
-        <p className="text-sm">Preparing secure setup…</p>
-      </div>
+      <AuthInviteProcessingOverlay
+        title="Preparing password setup"
+        subtitle="Securing your session before you choose a password."
+      />
     );
   }
 
@@ -156,7 +165,7 @@ function SetPasswordForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="min-h-[3rem] w-full rounded-2xl border border-border bg-card/70 px-4 text-base leading-normal outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring sm:text-[0.9375rem]"
-            placeholder="At least 8 characters"
+            placeholder="At least 12 characters"
           />
         </label>
 

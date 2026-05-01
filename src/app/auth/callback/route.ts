@@ -3,6 +3,8 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { hasCompletedInvitePassword } from "@/lib/auth-invite-metadata";
+
 /**
  * Invite / magic-link / OAuth redirect handling.
  * Add this URL under Supabase Auth → Redirect URLs: {SITE_URL}/auth/callback
@@ -54,7 +56,25 @@ export async function GET(request: Request) {
       );
     }
 
-    if (otpType === "invite" || otpType === "recovery") {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.redirect(`${origin}/login?error=session`);
+    }
+
+    if (otpType === "recovery") {
+      return NextResponse.redirect(`${origin}${passwordSetupRedirect}`);
+    }
+
+    if (otpType === "invite" && hasCompletedInvitePassword(user)) {
+      await supabase.auth.signOut();
+      return NextResponse.redirect(
+        `${origin}/login?info=already_registered&next=${encodeURIComponent(next)}`
+      );
+    }
+
+    if (otpType === "invite" || !hasCompletedInvitePassword(user)) {
       return NextResponse.redirect(`${origin}${passwordSetupRedirect}`);
     }
 
@@ -77,7 +97,25 @@ export async function GET(request: Request) {
       );
     }
 
-    if (otpType === "invite" || otpType === "recovery") {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.redirect(`${origin}/login?error=session`);
+    }
+
+    if (otpType === "recovery") {
+      return NextResponse.redirect(`${origin}${passwordSetupRedirect}`);
+    }
+
+    if (otpType === "invite" && hasCompletedInvitePassword(user)) {
+      await supabase.auth.signOut();
+      return NextResponse.redirect(
+        `${origin}/login?info=already_registered&next=${encodeURIComponent(next)}`
+      );
+    }
+
+    if (otpType === "invite" || !hasCompletedInvitePassword(user)) {
       return NextResponse.redirect(`${origin}${passwordSetupRedirect}`);
     }
 
