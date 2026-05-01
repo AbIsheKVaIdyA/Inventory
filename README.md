@@ -1,6 +1,6 @@
 # Inventory
 
-Internal **ECS IT Operations** handheld scan queue: Next.js App Router UI, Supabase table `inventory_items`, optional CSV download and Google Sheets sync.
+Internal **ECS IT Operations** handheld scan queue: Next.js App Router UI, Supabase table `inventory_items`, and CSV export from the app.
 
 ## Prerequisites
 
@@ -14,8 +14,6 @@ Copy `.env.example` to `.env.local` and set:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-Optional Sheets sync: see `.env.example` for server vars used by `POST /api/sync-to-sheets`.
-
 ## Commands
 
 ```bash
@@ -27,4 +25,4 @@ npm run build
 
 ## Flow
 
-Pick your name → **To scan** marks devices live → **Done** opens the scanned-only list with undo confirmation. Footer shows project attribution.
+Pick your name → **To scan** marks devices live → **Done** opens the scanned-only list with undo confirmation → **Download** exports CSV. Footer shows project attribution.

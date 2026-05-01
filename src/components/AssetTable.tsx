@@ -30,16 +30,6 @@ import { Header } from "@/components/Header";
 import { LocationFilterBar } from "@/components/LocationFilterBar";
 import { ScannedItemsSection } from "@/components/ScannedItemsSection";
 
-async function silentSheetsSync(rowsSnapshot: InventoryItemRow[]) {
-  await fetch("/api/sync-to-sheets", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      assets: rowsSnapshot.map((r) => inventoryItemToAsset(r)),
-    }),
-  });
-}
-
 type AssetTableProps = {
   selectedUser: StoredUserName | null;
   onSwitchUser: () => void;
@@ -317,10 +307,6 @@ export function AssetTable({ selectedUser, onSwitchUser }: AssetTableProps) {
         if (error) throw error;
 
         rollbackRef.current = null;
-        setInventoryRows((fresh) => {
-          void silentSheetsSync(fresh);
-          return fresh;
-        });
       } catch (e) {
         const prevRow = rollbackRef.current;
         if (prevRow) {
@@ -380,10 +366,6 @@ export function AssetTable({ selectedUser, onSwitchUser }: AssetTableProps) {
       if (error) throw error;
 
       unscanRollbackRef.current = null;
-      setInventoryRows((fresh) => {
-        void silentSheetsSync(fresh);
-        return fresh;
-      });
     } catch (e) {
       const prevRow = unscanRollbackRef.current;
       if (prevRow) {
