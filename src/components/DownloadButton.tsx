@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   INVENTORY_CSV_HEADERS,
   inventoryRowCsvValues,
+  sortInventoryRowsForCsvExport,
   type InventoryItemRow,
 } from "@/lib/inventory-map";
 import { downloadCsv, toCsv } from "@/lib/csv";
@@ -35,10 +36,11 @@ export function DownloadButton({ className, fallbackRows }: DownloadButtonProps)
         rows = fallbackRows ?? [];
       }
 
+      const sorted = sortInventoryRowsForCsvExport(rows);
       const header = [...INVENTORY_CSV_HEADERS];
       const csv = toCsv(
         header,
-        rows.map((r) => inventoryRowCsvValues(r))
+        sorted.map((r) => inventoryRowCsvValues(r))
       );
 
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");

@@ -120,9 +120,26 @@ export function sortInventoryRows(rows: InventoryItemRow[]): InventoryItemRow[] 
   );
 }
 
+/**
+ * CSV export order: completed (scanned) first, newest scan first; then pending, by label.
+ */
+export function sortInventoryRowsForCsvExport(
+  rows: InventoryItemRow[]
+): InventoryItemRow[] {
+  return [...rows].sort((a, b) => {
+    const aDone = a.scan_status === "scanned";
+    const bDone = b.scan_status === "scanned";
+    if (aDone !== bDone) return aDone ? -1 : 1;
+    if (aDone && bDone) {
+      const byTime = (b.scanned_at ?? "").localeCompare(a.scanned_at ?? "");
+      if (byTime !== 0) return byTime;
+    }
+    return displayLabelFromInventory(a).localeCompare(displayLabelFromInventory(b));
+  });
+}
+
 /** CSV column order aligned with worksheet + scan fields */
 export const INVENTORY_CSV_HEADERS = [
-  "id",
   "sheet_row_id",
   "area_id",
   "tag_number",
@@ -145,7 +162,6 @@ export const INVENTORY_CSV_HEADERS = [
 
 export function inventoryRowCsvValues(row: InventoryItemRow): string[] {
   return [
-    row.id,
     row.sheet_row_id != null ? String(row.sheet_row_id) : "",
     row.area_id ?? "",
     row.tag_number ?? "",
