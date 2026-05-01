@@ -56,7 +56,7 @@ export function DownloadButton({ className, fallbackRows }: DownloadButtonProps)
       variant="outline"
       size="lg"
       className={cn(
-        "min-h-12 flex-1 rounded-2xl border-border bg-card/70 px-4 py-3 text-[0.9375rem] font-semibold shadow-md shadow-black/20 backdrop-blur-sm sm:flex-none sm:min-h-12 sm:px-5",
+        "touch-manipulation min-h-12 flex-1 rounded-2xl border-border bg-card/70 px-4 py-3 text-base font-semibold shadow-md shadow-black/20 backdrop-blur-sm sm:flex-none sm:min-h-12 sm:text-[0.9375rem] sm:px-5",
         className
       )}
       disabled={busy}

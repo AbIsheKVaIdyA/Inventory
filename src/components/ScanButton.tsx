@@ -27,7 +27,7 @@ export function ScanButton({ asset, scanning, onScan, className }: ScanButtonPro
       onClick={onScan}
       aria-busy={scanning}
       className={cn(
-        "h-14 min-h-14 w-full rounded-2xl text-base font-semibold shadow-lg transition-all active:scale-[0.99]",
+        "h-14 min-h-14 w-full touch-manipulation rounded-2xl text-base font-semibold shadow-lg transition-all motion-reduce:transition-none active:scale-[0.99]",
         scanned
           ? "border-border bg-muted/80 text-muted-foreground shadow-black/15"
           : "bg-gradient-to-br from-primary to-primary/85 text-primary-foreground shadow-emerald-900/30 ring-1 ring-emerald-400/25 hover:brightness-110 dark:shadow-black/40",

@@ -26,7 +26,7 @@ export function LocationFilterBar({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-border bg-card/80 p-4 shadow-md shadow-black/20 backdrop-blur-sm",
+        "rounded-2xl border border-border bg-card/80 p-4 max-[361px]:p-3 shadow-md shadow-black/20 backdrop-blur-sm",
         className
       )}
     >
@@ -53,7 +53,7 @@ export function LocationFilterBar({
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         className={cn(
-          "h-14 w-full cursor-pointer appearance-none rounded-2xl border border-border bg-background px-4 pr-11 text-base font-medium text-foreground shadow-inner",
+          "h-14 min-h-[3rem] w-full cursor-pointer appearance-none rounded-2xl border border-border bg-background px-4 pr-11 text-base font-medium text-foreground shadow-inner touch-manipulation",
           "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
           "disabled:cursor-not-allowed disabled:opacity-50"
         )}

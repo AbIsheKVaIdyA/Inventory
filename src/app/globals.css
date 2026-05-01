@@ -131,12 +131,12 @@
     @apply border-border outline-ring/50;
   }
   html {
-    @apply font-sans;
+    @apply overflow-x-clip font-sans;
+    text-size-adjust: 100%;
     color-scheme: dark;
   }
   body {
-    @apply min-h-dvh bg-background text-foreground antialiased;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    @apply min-h-dvh overflow-x-clip bg-background text-foreground antialiased;
     background-image:
       radial-gradient(ellipse 100% 60% at 50% -15%, oklch(0.32 0.08 155 / 0.12), transparent 55%),
       radial-gradient(ellipse 80% 50% at 100% 0%, oklch(0.25 0.06 270 / 0.08), transparent 45%);

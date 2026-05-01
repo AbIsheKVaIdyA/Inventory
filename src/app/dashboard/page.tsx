@@ -1,34 +1,23 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { Loader2Icon } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { DashboardClient } from "@/app/dashboard/dashboard-client";
 
-import { AssetTable } from "@/components/AssetTable";
+import { createSupabaseServerClient } from "@/lib/supabase/server-client";
 
-import { useSelectedUser } from "@/hooks/use-selected-user";
+export default async function DashboardPage() {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-export default function DashboardPage() {
-  const router = useRouter();
-  const { user, hydrated, clearUser } = useSelectedUser();
+  if (!user?.email) redirect("/login");
 
-  useEffect(() => {
-    if (hydrated && !user) {
-      router.replace("/");
-    }
-  }, [hydrated, user, router]);
+  const md = user.user_metadata as Record<string, unknown> | undefined;
+  const full =
+    typeof md?.full_name === "string" ? md.full_name.trim() : "";
+  const label = full.length > 0 ? full : user.email.split("@")[0] ?? user.email;
 
-  if (!hydrated || !user) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-muted-foreground">
-        <div className="relative">
-          <div className="absolute inset-0 rounded-full bg-primary/20 blur-2xl" aria-hidden />
-          <Loader2Icon className="relative size-11 animate-spin text-primary" aria-hidden />
-        </div>
-        <span className="text-sm font-medium">Opening queue…</span>
-      </div>
-    );
-  }
-
-  return <AssetTable selectedUser={user} onSwitchUser={clearUser} />;
+  return (
+    <DashboardClient scannerEmail={user.email} scannerDisplayName={label} />
+  );
 }

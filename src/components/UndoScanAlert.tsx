@@ -42,11 +42,11 @@ export function UndoScanAlert({
             "[&[data-starting-style]]:opacity-0 [&[data-ending-style]]:opacity-0"
           )}
         />
-        <AlertDialog.Viewport className="fixed inset-0 z-[100] flex items-end justify-center p-4 sm:items-center">
+        <AlertDialog.Viewport className="fixed inset-0 z-[100] flex items-end justify-center p-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-10 sm:p-4 sm:items-center sm:pb-[max(1rem,env(safe-area-inset-bottom))]">
           <AlertDialog.Popup
             initialFocus={true}
             className={cn(
-              "w-full max-w-[min(calc(100vw-2rem),22rem)] origin-bottom rounded-3xl border border-border/90 bg-card/98 p-6 shadow-2xl shadow-black/50 ring-1 ring-white/[0.08] backdrop-blur-xl",
+              "max-h-[min(85dvh,calc(100svh-2.5rem))] w-full max-w-[min(calc(100vw-1.5rem),22rem)] origin-bottom overflow-y-auto overscroll-y-contain rounded-3xl border border-border/90 bg-card/98 p-5 shadow-2xl shadow-black/50 ring-1 ring-white/[0.08] backdrop-blur-xl sm:max-h-[90dvh] sm:p-6",
               "transition-[opacity,transform] duration-200 ease-out sm:origin-center",
               "[&[data-starting-style]]:translate-y-3 [&[data-starting-style]]:scale-[0.96] [&[data-starting-style]]:opacity-0",
               "[&[data-ending-style]]:scale-[0.98] [&[data-ending-style]]:opacity-0"
@@ -70,7 +70,7 @@ export function UndoScanAlert({
                 type="button"
                 className={cn(
                   buttonVariants({ variant: "outline", size: "lg" }),
-                  "h-12 shrink-0 gap-2 rounded-2xl border-border shadow-sm shadow-black/20"
+                  "touch-manipulation h-12 min-h-12 shrink-0 gap-2 rounded-2xl border-border shadow-sm shadow-black/20"
                 )}
               >
                 Cancel
@@ -81,7 +81,7 @@ export function UndoScanAlert({
                 size="lg"
                 disabled={busy}
                 aria-busy={busy}
-                className="h-12 gap-2 rounded-2xl border-orange-600/45 bg-orange-950/35 font-semibold text-orange-100 hover:bg-orange-950/65 hover:text-orange-50"
+                className="touch-manipulation h-12 min-h-12 gap-2 rounded-2xl border-orange-600/45 bg-orange-950/35 font-semibold text-orange-100 hover:bg-orange-950/65 hover:text-orange-50"
                 onClick={() => {
                   if (busy || !asset) return;
                   onConfirmReturn();

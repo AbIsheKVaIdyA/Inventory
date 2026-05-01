@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-import type { StoredUserName } from "@/lib/constants";
+
+
 import {
   inventoryItemFromRecord,
   inventoryItemToAsset,
@@ -31,11 +32,16 @@ import { LocationFilterBar } from "@/components/LocationFilterBar";
 import { ScannedItemsSection } from "@/components/ScannedItemsSection";
 
 type AssetTableProps = {
-  selectedUser: StoredUserName | null;
-  onSwitchUser: () => void;
+  scannerEmail: string;
+  scannerDisplayName: string;
+  onSignOut: () => Promise<void>;
 };
 
-export function AssetTable({ selectedUser, onSwitchUser }: AssetTableProps) {
+export function AssetTable({
+  scannerEmail,
+  scannerDisplayName,
+  onSignOut,
+}: AssetTableProps) {
   const [inventoryRows, setInventoryRows] = useState<InventoryItemRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -45,7 +51,7 @@ export function AssetTable({ selectedUser, onSwitchUser }: AssetTableProps) {
   const [unscanningId, setUnscanningId] = useState<string | null>(null);
   const rollbackRef = useRef<InventoryItemRow | null>(null);
   const unscanRollbackRef = useRef<InventoryItemRow | null>(null);
-  const userRef = useRef(selectedUser);
+  const userRef = useRef(scannerEmail);
   const [locationFilter, setLocationFilter] = useState<string>(LOCATION_FILTER_ALL);
   const [inventoryView, setInventoryView] = useState<"queue" | "scanned">("queue");
 
@@ -127,8 +133,8 @@ export function AssetTable({ selectedUser, onSwitchUser }: AssetTableProps) {
   }, [inventoryView, counts.total, counts.scanned, loading]);
 
   useEffect(() => {
-    userRef.current = selectedUser;
-  }, [selectedUser]);
+    userRef.current = scannerEmail;
+  }, [scannerEmail]);
 
   useEffect(() => {
     if (locationFilter === LOCATION_FILTER_ALL) return;
@@ -385,11 +391,15 @@ export function AssetTable({ selectedUser, onSwitchUser }: AssetTableProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <Header currentUser={selectedUser} onSwitchUser={onSwitchUser} />
+      <Header
+        currentDisplayName={scannerDisplayName}
+        sessionEmail={scannerEmail}
+        onSignOut={() => void onSignOut()}
+      />
 
       <main
         className={cn(
-          "mx-auto flex w-full max-w-lg flex-1 flex-col gap-5 px-4 pb-6 pt-5",
+          "mx-auto flex min-h-0 w-full min-w-0 max-w-lg flex-1 flex-col gap-5 overflow-x-hidden px-4 pb-6 pt-5 max-[361px]:px-3",
           inventoryView === "scanned" &&
             "max-sm:pb-[calc(var(--site-footer-reserve)+4.75rem)]"
         )}
@@ -424,7 +434,7 @@ export function AssetTable({ selectedUser, onSwitchUser }: AssetTableProps) {
             <Button
               type="button"
               variant="outline"
-              className="h-12 w-full justify-center gap-2 rounded-2xl border-border bg-card/50 px-5 shadow-md shadow-black/20 max-sm:fixed max-sm:inset-x-4 max-sm:bottom-[calc(var(--site-footer-reserve)+0.625rem)] max-sm:z-[45] max-sm:border max-sm:bg-background/92 max-sm:shadow-black/35 max-sm:backdrop-blur-xl sm:static sm:w-auto sm:self-start sm:justify-start"
+              className="h-12 w-full justify-center gap-2 rounded-2xl border-border bg-card/50 px-5 shadow-md shadow-black/20 touch-manipulation max-sm:fixed max-sm:inset-x-3 max-sm:bottom-[calc(var(--site-footer-reserve)+0.625rem)] max-sm:z-[45] max-sm:border max-sm:bg-background/92 max-sm:shadow-black/35 max-sm:backdrop-blur-xl sm:static sm:w-auto sm:self-start sm:justify-start motion-reduce:transition-none"
               onClick={() => setInventoryView("queue")}
               aria-label="Back to scanning queue"
             >
@@ -542,12 +552,12 @@ export function AssetTable({ selectedUser, onSwitchUser }: AssetTableProps) {
         ) : null}
 
         <div className="flex flex-wrap gap-2">
-          <DownloadButton fallbackRows={inventoryRows} className="min-w-[8rem]" />
+          <DownloadButton fallbackRows={inventoryRows} className="min-w-0 basis-full sm:min-w-[8rem] sm:basis-auto" />
           {hasSupabaseConfig() && (
             <Button
               type="button"
               variant="outline"
-              className="h-12 min-h-12 min-w-[3.25rem] flex-1 rounded-2xl border-border bg-card/50 px-0 shadow-md shadow-black/20 sm:min-w-[3rem] sm:flex-none sm:px-4"
+              className="h-12 min-h-12 min-w-[3.25rem] flex-1 touch-manipulation rounded-2xl border-border bg-card/50 px-0 shadow-md shadow-black/20 sm:min-w-[3rem] sm:flex-none sm:px-4"
               disabled={loading}
               onClick={() => void reload()}
               aria-label={loading ? "Refreshing" : "Reload from database"}

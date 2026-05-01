@@ -189,7 +189,7 @@ export function ScannedItemsSection({
 
       <div className="px-4 pb-4 pt-3">
         {listMode === "recent" ? (
-          <ul className="flex max-h-[min(70vh,32rem)] flex-col gap-3 overflow-y-auto pr-1 sm:max-h-[min(75vh,40rem)]">
+          <ul className="flex max-h-[min(60dvh,min(32rem,85svh))] flex-col gap-3 overflow-y-auto overscroll-y-contain pr-1 sm:max-h-[min(70dvh,40rem)]">
             {assets.map((asset) => (
               <ScannedItemRow
                 key={asset.id}
@@ -201,7 +201,7 @@ export function ScannedItemsSection({
             ))}
           </ul>
         ) : (
-          <div className="flex max-h-[min(70vh,32rem)] flex-col gap-2 overflow-y-auto pr-1 sm:max-h-[min(75vh,40rem)]">
+          <div className="flex max-h-[min(60dvh,min(32rem,85svh))] flex-col gap-2 overflow-y-auto overscroll-y-contain pr-1 sm:max-h-[min(70dvh,40rem)]">
             {locationGroups?.map((group) => (
               <details
                 key={group.label}

@@ -53,7 +53,7 @@ export function AssetRow({ asset, scanning, onScan }: AssetRowProps) {
               <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
                 Asset / tag
               </p>
-              <p className="mt-1 truncate font-mono text-lg font-semibold tracking-wide text-foreground sm:text-xl">
+              <p className="mt-1 break-words font-mono text-base font-semibold tracking-wide text-foreground sm:text-lg sm:tracking-wide">
                 {asset.computer_name}
               </p>
             </div>
