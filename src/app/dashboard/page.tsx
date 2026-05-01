@@ -20,7 +20,7 @@ export default function DashboardPage() {
 
   if (!hydrated || !user) {
     return (
-      <div className="flex min-h-dvh flex-1 flex-col items-center justify-center gap-4 px-6 text-muted-foreground">
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-muted-foreground">
         <div className="relative">
           <div className="absolute inset-0 rounded-full bg-primary/20 blur-2xl" aria-hidden />
           <Loader2Icon className="relative size-11 animate-spin text-primary" aria-hidden />
