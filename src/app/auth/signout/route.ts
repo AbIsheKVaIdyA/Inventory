@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
+import { DEMO_ACCESS_COOKIE } from "@/lib/demo-access";
 
 /**
  * Clears Supabase auth cookies (SSR-safe). Client-only signOut() often leaves
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
   });
 
   await supabase.auth.signOut();
+  response.cookies.delete(DEMO_ACCESS_COOKIE);
 
   return response;
 }

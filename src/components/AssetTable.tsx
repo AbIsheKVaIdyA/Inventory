@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftIcon, Loader2Icon, RefreshCwIcon } from "lucide-react";
+import { ArrowLeftIcon, CheckCheckIcon, Loader2Icon, RefreshCwIcon, RotateCcwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,9 @@ import { cn } from "@/lib/utils";
 import type { Asset } from "@/types/asset";
 
 import { AssetRow } from "@/components/AssetRow";
+import { CelebrationToast } from "@/components/CelebrationToast";
 import { DownloadButton } from "@/components/DownloadButton";
+import { FinishLocationAlert } from "@/components/FinishLocationAlert";
 import { Header } from "@/components/Header";
 import { LocationFilterBar } from "@/components/LocationFilterBar";
 import { ScannedItemsSection } from "@/components/ScannedItemsSection";
@@ -49,6 +51,13 @@ export function AssetTable({
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [unscanningId, setUnscanningId] = useState<string | null>(null);
+  const [bulkScanning, setBulkScanning] = useState(false);
+  const [bulkUnscanning, setBulkUnscanning] = useState(false);
+  const [showFinishLocationAlert, setShowFinishLocationAlert] = useState(false);
+  const [showReturnLocationAlert, setShowReturnLocationAlert] = useState(false);
+  const [toastOpen, setToastOpen] = useState(false);
+  const [toastTitle, setToastTitle] = useState("Location complete!");
+  const [toastMessage, setToastMessage] = useState("");
   const rollbackRef = useRef<InventoryItemRow | null>(null);
   const unscanRollbackRef = useRef<InventoryItemRow | null>(null);
   const userRef = useRef(scannerEmail);
@@ -100,6 +109,12 @@ export function AssetTable({
   const locationFilterActive = locationFilter !== LOCATION_FILTER_ALL;
 
   const filteredPendingCount = filteredPendingAssets.length;
+  const selectedLocationLabel = useMemo(() => {
+    if (locationFilter === LOCATION_FILTER_ALL) return "All locations";
+    if (locationFilter === LOCATION_FILTER_UNSET) return "(No location set)";
+    const found = locationFilterOptions.find((opt) => opt.value === locationFilter);
+    return found?.label ?? locationFilter;
+  }, [locationFilter, locationFilterOptions]);
 
   const counts = useMemo(() => {
     const scanned = inventoryRows.filter((r) => r.scan_status === "scanned").length;
@@ -117,6 +132,12 @@ export function AssetTable({
       : locationFilterActive && counts.scanned > 0
         ? "No scanned rows at this location. Clear the filter to see scanned items elsewhere."
         : "Nothing scanned yet";
+
+  useEffect(() => {
+    if (!toastOpen) return;
+    const id = window.setTimeout(() => setToastOpen(false), 2600);
+    return () => window.clearTimeout(id);
+  }, [toastOpen]);
 
   const openScannedView = useCallback(() => {
     if (!canOpenScannedView) return;
@@ -389,8 +410,167 @@ export function AssetTable({
     }
   }, []);
 
+  const handleFinishLocation = useCallback(async () => {
+    if (!locationFilterActive || filteredPendingAssets.length === 0 || bulkScanning) return;
+
+    const userNow = userRef.current;
+    if (!userNow) return;
+
+    const targetIds = filteredPendingAssets.map((asset) => asset.id);
+    const targetSet = new Set(targetIds);
+    const nowIso = new Date().toISOString();
+    const prevRows = inventoryRows
+      .filter((row) => targetSet.has(row.id))
+      .map((row) => ({ ...row }));
+    const prevById = new Map(prevRows.map((r) => [r.id, r] as const));
+
+    setBulkScanning(true);
+    setMutationError(null);
+    setShowFinishLocationAlert(false);
+
+    setInventoryRows((curr) =>
+      sortInventoryRows(
+        curr.map((r) =>
+          targetSet.has(r.id)
+            ? {
+                ...r,
+                scan_status: "scanned",
+                scanned_by: userNow,
+                scanned_at: nowIso,
+              }
+            : r
+        )
+      )
+    );
+
+    try {
+      const sb = getSupabaseBrowserClient();
+      const { error } = await sb
+        .from("inventory_items")
+        .update({
+          scan_status: "scanned",
+          scanned_by: userNow,
+          scanned_at: nowIso,
+        })
+        .in("id", targetIds);
+      if (error) throw error;
+
+      setToastMessage(
+        `Woohoo! Marked ${targetIds.length} system(s) scanned for ${selectedLocationLabel}.`
+      );
+      setToastTitle("Location complete!");
+      setToastOpen(true);
+    } catch (e) {
+      setInventoryRows((curr) =>
+        sortInventoryRows(curr.map((r) => (targetSet.has(r.id) ? prevById.get(r.id) ?? r : r)))
+      );
+      const msg =
+        e instanceof Error
+          ? e.message
+          : "Could not finish this location right now. Please try again.";
+      setMutationError(msg);
+    } finally {
+      setBulkScanning(false);
+    }
+  }, [
+    bulkScanning,
+    filteredPendingAssets,
+    inventoryRows,
+    locationFilterActive,
+    selectedLocationLabel,
+  ]);
+
+  const handleReturnLocationToQueue = useCallback(async () => {
+    if (!locationFilterActive || filteredScannedAssets.length === 0 || bulkUnscanning) return;
+
+    const targetIds = filteredScannedAssets.map((asset) => asset.id);
+    const targetSet = new Set(targetIds);
+    const prevRows = inventoryRows
+      .filter((row) => targetSet.has(row.id))
+      .map((row) => ({ ...row }));
+    const prevById = new Map(prevRows.map((r) => [r.id, r] as const));
+
+    setBulkUnscanning(true);
+    setMutationError(null);
+    setShowReturnLocationAlert(false);
+
+    setInventoryRows((curr) =>
+      sortInventoryRows(
+        curr.map((r) =>
+          targetSet.has(r.id)
+            ? {
+                ...r,
+                scan_status: "pending",
+                scanned_by: null,
+                scanned_at: null,
+              }
+            : r
+        )
+      )
+    );
+
+    try {
+      const sb = getSupabaseBrowserClient();
+      const { error } = await sb
+        .from("inventory_items")
+        .update({
+          scan_status: "pending",
+          scanned_by: null,
+          scanned_at: null,
+        })
+        .in("id", targetIds);
+      if (error) throw error;
+
+      setToastTitle("Location reopened");
+      setToastMessage(
+        `Returned ${targetIds.length} system(s) to queue for ${selectedLocationLabel}.`
+      );
+      setToastOpen(true);
+    } catch (e) {
+      setInventoryRows((curr) =>
+        sortInventoryRows(curr.map((r) => (targetSet.has(r.id) ? prevById.get(r.id) ?? r : r)))
+      );
+      const msg =
+        e instanceof Error
+          ? e.message
+          : "Could not return this location to queue right now. Please try again.";
+      setMutationError(msg);
+    } finally {
+      setBulkUnscanning(false);
+    }
+  }, [
+    bulkUnscanning,
+    filteredScannedAssets,
+    inventoryRows,
+    locationFilterActive,
+    selectedLocationLabel,
+  ]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <FinishLocationAlert
+        open={showFinishLocationAlert}
+        busy={bulkScanning}
+        locationLabel={selectedLocationLabel}
+        affectedCount={filteredPendingAssets.length}
+        mode="scan"
+        onDismiss={() => setShowFinishLocationAlert(false)}
+        onConfirm={() => void handleFinishLocation()}
+      />
+      <FinishLocationAlert
+        open={showReturnLocationAlert}
+        busy={bulkUnscanning}
+        locationLabel={selectedLocationLabel}
+        affectedCount={filteredScannedAssets.length}
+        mode="unscan"
+        onDismiss={() => setShowReturnLocationAlert(false)}
+        onConfirm={() => void handleReturnLocationToQueue()}
+      />
+      <CelebrationToast
+        open={toastOpen}
+        title={toastTitle}
+        message={toastMessage}
+      />
       <Header
         currentDisplayName={scannerDisplayName}
         sessionEmail={scannerEmail}
@@ -461,6 +641,26 @@ export function AssetTable({
               onChange={setLocationFilter}
               options={locationFilterOptions}
             />
+            {locationFilterActive && filteredScannedAssets.length > 0 ? (
+              <Button
+                type="button"
+                onClick={() => setShowReturnLocationAlert(true)}
+                disabled={bulkUnscanning || bulkScanning}
+                className="h-12 min-h-12 w-full touch-manipulation gap-2 rounded-2xl bg-orange-600 text-white shadow-md shadow-orange-950/45 hover:bg-orange-500"
+              >
+                {bulkUnscanning ? (
+                  <>
+                    <Loader2Icon className="size-5 animate-spin shrink-0" aria-hidden />
+                    Returning location to queue…
+                  </>
+                ) : (
+                  <>
+                    <RotateCcwIcon className="size-5 shrink-0" aria-hidden />
+                    Return this location to queue
+                  </>
+                )}
+              </Button>
+            ) : null}
             {filteredScannedAssets.length === 0 ? (
               <section className="rounded-2xl border border-amber-500/35 bg-amber-950/35 px-4 py-5 text-center">
                 <p className="text-sm font-medium text-amber-50">
@@ -548,6 +748,26 @@ export function AssetTable({
               onChange={setLocationFilter}
               options={locationFilterOptions}
             />
+            {locationFilterActive && filteredPendingCount > 0 ? (
+              <Button
+                type="button"
+                onClick={() => setShowFinishLocationAlert(true)}
+                disabled={bulkScanning || bulkUnscanning}
+                className="h-12 min-h-12 w-full touch-manipulation gap-2 rounded-2xl bg-emerald-600 text-white shadow-md shadow-emerald-950/50 hover:bg-emerald-500"
+              >
+                {bulkScanning ? (
+                  <>
+                    <Loader2Icon className="size-5 animate-spin shrink-0" aria-hidden />
+                    Finishing this location…
+                  </>
+                ) : (
+                  <>
+                    <CheckCheckIcon className="size-5 shrink-0" aria-hidden />
+                    Finish scan for this location
+                  </>
+                )}
+              </Button>
+            ) : null}
           </div>
         ) : null}
 
