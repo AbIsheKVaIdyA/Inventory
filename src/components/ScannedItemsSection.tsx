@@ -57,6 +57,7 @@ function ScannedItemRow({
   showLocation?: boolean;
 }) {
   const locationText = asset.location?.trim();
+  const assetIdText = asset.asset_id?.trim();
   const notFound = asset.status === "not_found";
 
   return (
@@ -78,6 +79,12 @@ function ScannedItemRow({
               </span>
             ) : null}
           </div>
+          <p className="mt-1 font-mono text-xs text-muted-foreground">
+            Asset ID{" "}
+            <span className="font-medium text-foreground">
+              {assetIdText && assetIdText.length > 0 ? assetIdText : "—"}
+            </span>
+          </p>
           {showLocation ? (
             <div className="mt-1 flex items-start gap-1.5 text-xs text-muted-foreground">
               <MapPinIcon className="size-3.5 shrink-0 mt-0.5 text-amber-500/90" aria-hidden />

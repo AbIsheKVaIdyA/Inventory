@@ -29,6 +29,8 @@ type AddDiscoveredSystemDialogProps = {
   locationOptions: LocationPickerOption[];
   /** From active location filter: `null` = no preference, `""` = unset / no location on file */
   preferredLocation: string | null;
+  /** Prefill serial when opening from “find on worksheet” with no match */
+  initialSerial?: string | null;
   onDismiss: () => void;
   onSave: (payload: DiscoveredSystemPayload) => void;
 };
@@ -50,6 +52,7 @@ type FormProps = {
   busy: boolean;
   locationOptions: LocationPickerOption[];
   preferredLocation: string | null;
+  initialSerial?: string | null;
   onSave: (payload: DiscoveredSystemPayload) => void;
 };
 
@@ -57,12 +60,13 @@ function AddDiscoveredSystemForm({
   busy,
   locationOptions,
   preferredLocation,
+  initialSerial,
   onSave,
 }: FormProps) {
   const initial = deriveInitialSelect(preferredLocation, locationOptions);
   const [locationSelect, setLocationSelect] = useState(initial.select);
   const [locationCustom, setLocationCustom] = useState(initial.custom);
-  const [serialId, setSerialId] = useState("");
+  const [serialId, setSerialId] = useState(() => (initialSerial?.trim() ? initialSerial.trim() : ""));
   const [manufacturer, setManufacturer] = useState("");
   const [model, setModel] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -102,7 +106,7 @@ function AddDiscoveredSystemForm({
 
   return (
     <>
-      <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-sky-950/55 text-sky-200 ring-1 ring-sky-500/35">
+      <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-cyan-950/55 text-cyan-100 ring-1 ring-cyan-500/40">
         <PackagePlus className="size-6" aria-hidden />
       </div>
       <AlertDialog.Title className="text-center text-lg font-semibold tracking-tight text-foreground">
@@ -229,7 +233,7 @@ function AddDiscoveredSystemForm({
             size="lg"
             disabled={busy}
             aria-busy={busy}
-            className="touch-manipulation h-12 min-h-12 gap-2 rounded-2xl bg-sky-600 font-semibold text-white hover:bg-sky-500"
+            className="touch-manipulation h-12 min-h-12 gap-2 rounded-2xl bg-gradient-to-r from-cyan-600 to-teal-600 font-semibold text-white shadow-md shadow-teal-950/35 ring-1 ring-white/10 hover:from-cyan-500 hover:to-teal-500"
           >
             {busy ? (
               <>
@@ -252,6 +256,7 @@ export function AddDiscoveredSystemDialog({
   formMountKey,
   locationOptions,
   preferredLocation,
+  initialSerial,
   onDismiss,
   onSave,
 }: AddDiscoveredSystemDialogProps) {
@@ -282,10 +287,11 @@ export function AddDiscoveredSystemDialog({
           >
             {open ? (
               <AddDiscoveredSystemForm
-                key={formMountKey}
+                key={`${formMountKey}-${initialSerial ?? ""}`}
                 busy={busy}
                 locationOptions={locationOptions}
                 preferredLocation={preferredLocation}
+                initialSerial={initialSerial}
                 onSave={onSave}
               />
             ) : null}

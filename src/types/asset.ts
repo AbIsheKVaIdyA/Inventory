@@ -7,6 +7,7 @@ export type Asset = {
   location: string | null;
   /** Sticker / worksheet fields (editable when info was missing on import) */
   serial_id: string | null;
+  asset_id: string | null;
   manufacturer: string | null;
   model: string | null;
   status: AssetStatus;

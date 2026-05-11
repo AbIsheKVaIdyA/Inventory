@@ -9,18 +9,6 @@ import type { Asset } from "@/types/asset";
 
 import { cn } from "@/lib/utils";
 
-function formatTs(iso: string | null) {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  } catch {
-    return iso;
-  }
-}
-
 type AssetRowProps = {
   asset: Asset;
   scanning: boolean;
@@ -41,6 +29,7 @@ export function AssetRow({
   const rowBusy = scanning || notFoundBusy;
   const locationText = asset.location?.trim();
   const serialText = asset.serial_id?.trim();
+  const assetIdText = asset.asset_id?.trim();
   const brandText = asset.manufacturer?.trim();
   const modelText = asset.model?.trim();
 
@@ -123,6 +112,12 @@ export function AssetRow({
               </dd>
             </div>
             <div className="flex flex-wrap justify-between gap-2 gap-y-1">
+              <dt className="text-muted-foreground">Asset ID</dt>
+              <dd className="max-w-[65%] text-right font-mono text-xs font-medium text-foreground break-all">
+                {assetIdText && assetIdText.length > 0 ? assetIdText : "—"}
+              </dd>
+            </div>
+            <div className="flex flex-wrap justify-between gap-2 gap-y-1">
               <dt className="text-muted-foreground">Brand (manufacturer)</dt>
               <dd className="max-w-[65%] text-right font-medium text-foreground break-words">
                 {brandText && brandText.length > 0 ? brandText : "—"}
@@ -132,16 +127,6 @@ export function AssetRow({
               <dt className="text-muted-foreground">System type (model)</dt>
               <dd className="max-w-[65%] text-right font-medium text-foreground break-words">
                 {modelText && modelText.length > 0 ? modelText : "—"}
-              </dd>
-            </div>
-            <div className="flex flex-wrap justify-between gap-2 gap-y-1">
-              <dt className="text-muted-foreground">Last scan by</dt>
-              <dd className="font-medium text-foreground">{asset.scanned_by ?? "—"}</dd>
-            </div>
-            <div className="flex flex-wrap justify-between gap-2 gap-y-1">
-              <dt className="text-muted-foreground">Last scan time</dt>
-              <dd className="tabular-nums font-medium text-foreground">
-                {formatTs(asset.scanned_at)}
               </dd>
             </div>
           </dl>

@@ -1,9 +1,7 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 
 import { DashboardClient } from "@/app/dashboard/dashboard-client";
 
-import { DEMO_ACCESS_COOKIE, hasDemoAccessCookie } from "@/lib/demo-access";
 import { createSupabaseServerClient } from "@/lib/supabase/server-client";
 
 export default async function DashboardPage() {
@@ -13,15 +11,7 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
 
   if (!user?.email) {
-    const cookieStore = await cookies();
-    const hasDemoAccess = hasDemoAccessCookie(cookieStore.get(DEMO_ACCESS_COOKIE)?.value);
-    if (!hasDemoAccess) redirect("/login");
-    return (
-      <DashboardClient
-        scannerEmail="demo@inventory.local"
-        scannerDisplayName="Demo User"
-      />
-    );
+    redirect("/login");
   }
 
   const md = user.user_metadata as Record<string, unknown> | undefined;

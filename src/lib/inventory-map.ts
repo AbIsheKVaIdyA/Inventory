@@ -70,6 +70,7 @@ export function inventoryItemToAsset(row: InventoryItemRow): Asset {
     computer_name: displayLabelFromInventory(row),
     location: loc ? loc : null,
     serial_id: row.serial_id?.trim() ? row.serial_id.trim() : null,
+    asset_id: row.asset_id?.trim() ? row.asset_id.trim() : null,
     manufacturer: row.manufacturer?.trim() ? row.manufacturer.trim() : null,
     model: row.model?.trim() ? row.model.trim() : null,
     status,
@@ -165,20 +166,6 @@ function partitionInventoryRowsForCsvExport(rows: InventoryItemRow[]): {
   return { main, manual };
 }
 
-/**
- * CSV / worksheet order: import rows first (completed first, newest scan first; then pending
- * by label). Rows with `inventory_status` “Discovered on scan” (added on the floor) are last.
- */
-export function sortInventoryRowsForCsvExport(
-  rows: InventoryItemRow[]
-): InventoryItemRow[] {
-  const { main, manual } = partitionInventoryRowsForCsvExport(rows);
-  return [
-    ...[...main].sort(compareInventoryRowsForCsvExport),
-    ...[...manual].sort(compareInventoryRowsForCsvExport),
-  ];
-}
-
 /** CSV column order aligned with worksheet + scan fields */
 export const INVENTORY_CSV_HEADERS = [
   "sheet_row_id",
@@ -201,7 +188,7 @@ export const INVENTORY_CSV_HEADERS = [
   "scanned_at",
 ] as const;
 
-export function inventoryRowCsvValues(row: InventoryItemRow): string[] {
+function inventoryRowCsvValues(row: InventoryItemRow): string[] {
   return [
     row.sheet_row_id != null ? String(row.sheet_row_id) : "",
     row.area_id ?? "",
@@ -225,8 +212,9 @@ export function inventoryRowCsvValues(row: InventoryItemRow): string[] {
 }
 
 /**
- * CSV body lines for download: main worksheet rows, then two blank rows when both sections exist,
- * then manually added (“Discovered on scan”) rows with their data.
+ * Spreadsheet body rows for export: import rows first (completed first by newest scan, then
+ * pending by label), then two blank separator rows when both sections exist, then rows with
+ * `inventory_status` “Discovered on scan” (same ordering within each section).
  */
 export function inventoryCsvBodyLines(rows: InventoryItemRow[]): string[][] {
   const { main, manual } = partitionInventoryRowsForCsvExport(rows);

@@ -3,16 +3,17 @@
 import {
   ArrowLeftIcon,
   CheckCheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
   Loader2Icon,
   PackagePlus,
   RefreshCwIcon,
   RotateCcwIcon,
+  SearchIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-
-
 
 import {
   INVENTORY_STATUS_DISCOVERED_ON_SCAN,
@@ -48,6 +49,7 @@ import { FinishLocationAlert } from "@/components/FinishLocationAlert";
 import { Header } from "@/components/Header";
 import { LocationFilterBar } from "@/components/LocationFilterBar";
 import { ScannedItemsSection } from "@/components/ScannedItemsSection";
+import { SerialLookupDialog } from "@/components/SerialLookupDialog";
 
 type AssetTableProps = {
   scannerEmail: string;
@@ -69,7 +71,13 @@ export function AssetTable({
   const [notFoundId, setNotFoundId] = useState<string | null>(null);
   const [discoveredDialogOpen, setDiscoveredDialogOpen] = useState(false);
   const [discoveredFormKey, setDiscoveredFormKey] = useState(0);
+  const [discoveredPrefillSerial, setDiscoveredPrefillSerial] = useState<string | null>(null);
   const [discoveredSaving, setDiscoveredSaving] = useState(false);
+  const [findDialogOpen, setFindDialogOpen] = useState(false);
+  const [findDialogMountKey, setFindDialogMountKey] = useState(0);
+  const [findLookupBusy, setFindLookupBusy] = useState(false);
+  /** Collapsed by default so queue stays scannable */
+  const [queueExtrasOpen, setQueueExtrasOpen] = useState(false);
   const [unscanningId, setUnscanningId] = useState<string | null>(null);
   const [bulkScanning, setBulkScanning] = useState(false);
   const [bulkUnscanning, setBulkUnscanning] = useState(false);
@@ -80,6 +88,7 @@ export function AssetTable({
   const [toastMessage, setToastMessage] = useState("");
   const rollbackRef = useRef<InventoryItemRow | null>(null);
   const notFoundRollbackRef = useRef<InventoryItemRow | null>(null);
+  const lookupRollbackRef = useRef<InventoryItemRow | null>(null);
   const unscanRollbackRef = useRef<InventoryItemRow | null>(null);
   const userRef = useRef(scannerEmail);
   const [locationFilter, setLocationFilter] = useState<string>(LOCATION_FILTER_ALL);
@@ -501,6 +510,7 @@ export function AssetTable({
           return sortInventoryRows([...curr, row]);
         });
         setDiscoveredDialogOpen(false);
+        setDiscoveredPrefillSerial(null);
       } catch (e) {
         const msg =
           e instanceof Error ? e.message : "Could not add row — try again.";
@@ -511,6 +521,98 @@ export function AssetTable({
     },
     []
   );
+
+  const handleLookupConfirm = useCallback(async (rowId: string, locationResolved: string) => {
+    const userNow = userRef.current;
+    if (!userNow) return;
+
+    const locationNorm = locationResolved.trim() || null;
+    const nowIso = new Date().toISOString();
+
+    setMutationError(null);
+    setFindLookupBusy(true);
+
+    setInventoryRows((curr) => {
+      const prev = curr.find((r) => r.id === rowId);
+      if (!prev) return curr;
+      lookupRollbackRef.current = { ...prev };
+
+      if (prev.scan_status === "scanned") {
+        return sortInventoryRows(
+          curr.map((r) =>
+            r.id === rowId
+              ? {
+                  ...r,
+                  location: locationNorm,
+                  scanned_by: userNow,
+                  scanned_at: nowIso,
+                }
+              : r
+          )
+        );
+      }
+
+      return sortInventoryRows(
+        curr.map((r) =>
+          r.id === rowId
+            ? {
+                ...r,
+                location: locationNorm,
+                scan_status: "scanned",
+                scanned_by: userNow,
+                scanned_at: nowIso,
+                inventory_status:
+                  prev.scan_status === "not_found" ? null : prev.inventory_status ?? null,
+              }
+            : r
+        )
+      );
+    });
+
+    try {
+      const sb = getSupabaseBrowserClient();
+      const prev = lookupRollbackRef.current;
+      if (!prev) throw new Error("Missing row.");
+
+      let patch: Record<string, unknown>;
+      if (prev.scan_status === "scanned") {
+        patch = {
+          location: locationNorm,
+          scanned_by: userNow,
+          scanned_at: nowIso,
+        };
+      } else {
+        patch = {
+          location: locationNorm,
+          scan_status: "scanned",
+          scanned_by: userNow,
+          scanned_at: nowIso,
+        };
+        if (prev.scan_status === "not_found") {
+          patch.inventory_status = null;
+        }
+      }
+
+      const { error } = await sb.from("inventory_items").update(patch).eq("id", rowId);
+      if (error) throw error;
+
+      lookupRollbackRef.current = null;
+      setFindDialogOpen(false);
+      setToastTitle("Saved");
+      setToastMessage("Location updated and row marked scanned.");
+      setToastOpen(true);
+    } catch (e) {
+      const rb = lookupRollbackRef.current;
+      if (rb) {
+        setInventoryRows((curr) =>
+          sortInventoryRows(curr.map((r) => (r.id === rowId ? rb : r)))
+        );
+      }
+      setMutationError(e instanceof Error ? e.message : "Update failed — try again.");
+    } finally {
+      setFindLookupBusy(false);
+    }
+  }, []);
 
   const handleUnscan = useCallback(async (asset: Asset) => {
     if (asset.status !== "scanned" && asset.status !== "not_found") return;
@@ -770,13 +872,32 @@ export function AssetTable({
         title={toastTitle}
         message={toastMessage}
       />
+      <SerialLookupDialog
+        key={findDialogMountKey}
+        open={findDialogOpen}
+        busy={findLookupBusy}
+        inventoryRows={inventoryRows}
+        locationOptions={discoveredLocationOptions}
+        preferredLocation={preferredLocationForDiscovered}
+        onDismiss={() => setFindDialogOpen(false)}
+        onConfirmMatch={(id, loc) => void handleLookupConfirm(id, loc)}
+        onRequestManualAdd={(prefill) => {
+          setDiscoveredPrefillSerial(prefill.length > 0 ? prefill : null);
+          setDiscoveredFormKey((k) => k + 1);
+          setDiscoveredDialogOpen(true);
+        }}
+      />
       <AddDiscoveredSystemDialog
         open={discoveredDialogOpen}
         busy={discoveredSaving}
         formMountKey={discoveredFormKey}
         locationOptions={discoveredLocationOptions}
         preferredLocation={preferredLocationForDiscovered}
-        onDismiss={() => setDiscoveredDialogOpen(false)}
+        initialSerial={discoveredPrefillSerial}
+        onDismiss={() => {
+          setDiscoveredPrefillSerial(null);
+          setDiscoveredDialogOpen(false);
+        }}
         onSave={(p) => void handleInsertDiscoveredSystem(p)}
       />
       <Header
@@ -957,29 +1078,122 @@ export function AssetTable({
               options={locationFilterOptions}
             />
             {hasSupabaseConfig() && counts.total > 0 ? (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={discoveredSaving}
-                aria-busy={discoveredSaving}
-                onClick={() => {
-                  setDiscoveredFormKey((k) => k + 1);
-                  setDiscoveredDialogOpen(true);
-                }}
-                className="h-auto min-h-12 w-full touch-manipulation flex-col gap-1 rounded-2xl border-sky-500/40 bg-sky-950/25 px-4 py-3 text-sky-50 shadow-md shadow-black/15 hover:bg-sky-950/45"
+              <section
+                className={cn(
+                  "overflow-hidden rounded-2xl border border-dashed border-cyan-400/45 bg-gradient-to-br from-cyan-950/80 via-teal-950/45 to-slate-950/40 shadow-lg shadow-cyan-950/35 ring-1 ring-cyan-400/15 backdrop-blur-sm",
+                  (discoveredSaving || findLookupBusy) && "pointer-events-none opacity-70"
+                )}
               >
-                <span className="flex items-center justify-center gap-2 text-base font-semibold">
-                  {discoveredSaving ? (
-                    <Loader2Icon className="size-5 shrink-0 animate-spin" aria-hidden />
-                  ) : (
-                    <PackagePlus className="size-5 shrink-0 opacity-90" aria-hidden />
+                <button
+                  type="button"
+                  id="queue-extras-trigger"
+                  aria-expanded={queueExtrasOpen}
+                  aria-controls="queue-extras-panel"
+                  onClick={() => setQueueExtrasOpen((o) => !o)}
+                  className="flex w-full touch-manipulation items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.04] sm:px-3.5 sm:py-3"
+                >
+                  <span
+                    className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-100 ring-1 ring-cyan-400/40"
+                    aria-hidden
+                  >
+                    {discoveredSaving || findLookupBusy ? (
+                      <Loader2Icon className="size-4 animate-spin" />
+                    ) : (
+                      <PackagePlus className="size-4 opacity-95" />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold leading-tight text-cyan-50">
+                      Not on the worksheet?
+                    </span>
+                    <span className="mt-0.5 block text-[0.7rem] leading-snug text-cyan-200/75">
+                      {queueExtrasOpen
+                        ? "Search by serial/tag, or add a new row."
+                        : "Tap to search or add — keeps the queue compact."}
+                    </span>
+                  </span>
+                  <ChevronDownIcon
+                    className={cn(
+                      "size-5 shrink-0 text-cyan-300/90 transition-transform duration-200",
+                      queueExtrasOpen && "rotate-180"
+                    )}
+                    aria-hidden
+                  />
+                </button>
+                <div
+                  id="queue-extras-panel"
+                  role="region"
+                  aria-labelledby="queue-extras-trigger"
+                  className={cn(
+                    "grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
+                    queueExtrasOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
                   )}
-                  Add system not on worksheet
-                </span>
-                <span className="text-center text-xs font-normal leading-snug text-sky-200/80">
-                  For extra hardware you find on site: choose location, then serial / brand / model.
-                </span>
-              </Button>
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    <div className="border-t border-cyan-500/20 px-3 pb-3 pt-1 sm:px-3.5">
+                      <p
+                        id="manual-add-option-heading"
+                        className="sr-only"
+                      >
+                        Optional: find equipment on the worksheet or add a new row
+                      </p>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <Button
+                          type="button"
+                          disabled={discoveredSaving || findLookupBusy}
+                          aria-busy={findLookupBusy}
+                          aria-describedby="manual-add-option-heading"
+                          onClick={() => {
+                            setFindDialogMountKey((k) => k + 1);
+                            setFindDialogOpen(true);
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="h-11 min-h-11 touch-manipulation gap-2 rounded-xl border-teal-400/45 bg-teal-950/35 text-sm font-semibold text-teal-50 shadow-sm hover:bg-teal-950/55"
+                        >
+                          <SearchIcon className="size-4 shrink-0 opacity-90" aria-hidden />
+                          <span className="min-w-0 text-left leading-snug">
+                            Look up
+                            <span className="block text-[0.65rem] font-normal text-teal-200/80">
+                              Serial, asset ID, model…
+                            </span>
+                          </span>
+                        </Button>
+                        <Button
+                          type="button"
+                          disabled={discoveredSaving || findLookupBusy}
+                          aria-busy={discoveredSaving}
+                          aria-describedby="manual-add-option-heading"
+                          onClick={() => {
+                            setDiscoveredPrefillSerial(null);
+                            setDiscoveredFormKey((k) => k + 1);
+                            setDiscoveredDialogOpen(true);
+                          }}
+                          size="sm"
+                          className="h-11 min-h-11 touch-manipulation gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 text-sm font-semibold text-white shadow-md shadow-teal-950/40 ring-1 ring-white/10 hover:from-cyan-500 hover:to-teal-500"
+                        >
+                          {discoveredSaving ? (
+                            <>
+                              <Loader2Icon className="size-4 shrink-0 animate-spin" aria-hidden />
+                              Saving…
+                            </>
+                          ) : (
+                            <>
+                              <span className="min-w-0 text-left leading-snug">
+                                Add new
+                                <span className="block text-[0.65rem] font-normal text-white/85">
+                                  Not on import
+                                </span>
+                              </span>
+                              <ChevronRightIcon className="size-4 shrink-0 opacity-90" aria-hidden />
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
             ) : null}
             {locationFilterActive && filteredPendingCount > 0 ? (
               <Button

@@ -5,12 +5,8 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-import {
-  INVENTORY_CSV_HEADERS,
-  inventoryCsvBodyLines,
-  type InventoryItemRow,
-} from "@/lib/inventory-map";
-import { downloadCsv, toCsv } from "@/lib/csv";
+import { downloadInventorySpreadsheet } from "@/lib/download-inventory-xlsx";
+import type { InventoryItemRow } from "@/lib/inventory-map";
 import { fetchAllInventoryItemRows } from "@/lib/supabase/fetch-all-inventory-items";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser-client";
 import { cn } from "@/lib/utils";
@@ -20,7 +16,7 @@ type DownloadButtonProps = {
   fallbackRows?: InventoryItemRow[];
 };
 
-/** Fetches fresh rows from Supabase, then downloads CSV on the device. */
+/** Fetches fresh rows from Supabase, then downloads an Excel (.xlsx) spreadsheet on the device. */
 export function DownloadButton({ className, fallbackRows }: DownloadButtonProps) {
   const [busy, setBusy] = useState(false);
 
@@ -35,11 +31,8 @@ export function DownloadButton({ className, fallbackRows }: DownloadButtonProps)
         rows = fallbackRows ?? [];
       }
 
-      const header = [...INVENTORY_CSV_HEADERS];
-      const csv = toCsv(header, inventoryCsvBodyLines(rows));
-
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-      downloadCsv(`inventory-items-${stamp}.csv`, csv);
+      downloadInventorySpreadsheet(rows, `inventory-items-${stamp}.xlsx`);
     } finally {
       setBusy(false);
     }
@@ -60,13 +53,13 @@ export function DownloadButton({ className, fallbackRows }: DownloadButtonProps)
     >
       {busy ? (
         <>
-          <Loader2Icon className="size-5 animate-spin shrink-0" aria-hidden />
-          CSV…
+          <Loader2Icon className="size-5 shrink-0 animate-spin" aria-hidden />
+          Spreadsheet…
         </>
       ) : (
         <>
           <DownloadIcon className="size-5 shrink-0 opacity-90" aria-hidden />
-          Latest CSV
+          Download spreadsheet
         </>
       )}
     </Button>

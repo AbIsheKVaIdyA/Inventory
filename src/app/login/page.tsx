@@ -333,24 +333,6 @@ function LoginForm() {
                 </>
               )}
             </Button>
-            <div className="mt-1 flex items-center gap-3 text-[0.72rem] uppercase tracking-[0.14em] text-muted-foreground/80">
-              <span className="h-px flex-1 bg-border/70" aria-hidden />
-              Demo only
-              <span className="h-px flex-1 bg-border/70" aria-hidden />
-            </div>
-            <Button
-              type="button"
-              variant="secondary"
-              className="touch-manipulation mt-1 h-12 min-h-12 w-full rounded-2xl text-base font-semibold"
-              onClick={() => {
-                window.location.assign("/auth/demo");
-              }}
-            >
-              Enter demo mode (skip sign in)
-            </Button>
-            <p className="text-center text-xs text-muted-foreground">
-              Temporary demo shortcut. Remove after presentation.
-            </p>
           </form>
         )}
       </div>
