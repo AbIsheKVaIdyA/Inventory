@@ -1,7 +1,1 @@
--- Optional sample rows (truncate or skip in production).
-insert into public.assets (computer_name, status)
-values
-  ('LAB-WS-001', 'pending'),
-  ('LAB-WS-002', 'pending'),
-  ('LAPTOP-ALPHA', 'pending'),
-  ('DOCK-BAY-3', 'pending');
+-- No default rows: the app reads `public.inventory_items` (see migrations). Import your worksheet via your usual pipeline.

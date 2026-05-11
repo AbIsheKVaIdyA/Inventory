@@ -3,7 +3,6 @@
 import {
   ArrowLeftIcon,
   CheckCheckIcon,
-  ChevronDownIcon,
   ChevronRightIcon,
   Loader2Icon,
   PackagePlus,
@@ -76,8 +75,6 @@ export function AssetTable({
   const [findDialogOpen, setFindDialogOpen] = useState(false);
   const [findDialogMountKey, setFindDialogMountKey] = useState(0);
   const [findLookupBusy, setFindLookupBusy] = useState(false);
-  /** Collapsed by default so queue stays scannable */
-  const [queueExtrasOpen, setQueueExtrasOpen] = useState(false);
   const [unscanningId, setUnscanningId] = useState<string | null>(null);
   const [bulkScanning, setBulkScanning] = useState(false);
   const [bulkUnscanning, setBulkUnscanning] = useState(false);
@@ -94,12 +91,10 @@ export function AssetTable({
   const [locationFilter, setLocationFilter] = useState<string>(LOCATION_FILTER_ALL);
   const [inventoryView, setInventoryView] = useState<"queue" | "scanned">("queue");
 
-  const assets: Asset[] = useMemo(() => {
-    const mapped = inventoryRows.map((r) => inventoryItemToAsset(r));
-    return mapped.sort((a, b) =>
-      a.computer_name.localeCompare(b.computer_name)
-    );
-  }, [inventoryRows]);
+  const assets: Asset[] = useMemo(
+    () => sortInventoryRows(inventoryRows).map((r) => inventoryItemToAsset(r)),
+    [inventoryRows]
+  );
 
   const pendingAssets = useMemo(
     () => assets.filter((a) => a.status === "pending"),
@@ -1004,12 +999,23 @@ export function AssetTable({
                   Show all locations
                 </Button>
               </section>
-            ) : (
+            ) : locationFilterActive ? (
               <ScannedItemsSection
                 assets={filteredResolvedAssets}
                 unscanningId={unscanningId}
                 onUnscan={handleUnscan}
               />
+            ) : (
+              <section className="rounded-2xl border border-border bg-muted/30 px-4 py-5 text-center shadow-inner ring-1 ring-white/[0.04]">
+                <p className="text-sm font-medium text-foreground">
+                  {counts.resolved} completed across every site
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                  The full list is hidden while <span className="font-medium text-foreground">All locations</span>{" "}
+                  is selected so this page stays short. Choose a site in the filter above to review and
+                  undo scans for that place only.
+                </p>
+              </section>
             )}
           </div>
         ) : null}
@@ -1041,7 +1047,8 @@ export function AssetTable({
                   <>
                     Drops by 1 whenever someone taps Scanned — same tally for the whole team in real
                     time.&nbsp;
-                    Use the location filter below to plan one site at a time.
+                    Pick a site in the filter below to load that queue here, or use Look up to jump to
+                    a row.
                   </>
                 )}
               </p>
@@ -1062,15 +1069,36 @@ export function AssetTable({
                   {counts.resolved}
                 </p>
               </button>
-              <div className="rounded-2xl border border-border bg-card/80 px-3 py-4 text-center shadow-md shadow-black/20 backdrop-blur-sm">
-                <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
-                  In file
-                </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
-                  {counts.total}
-                </p>
-                <p className="mt-0.5 text-[0.65rem] text-muted-foreground">total rows</p>
-              </div>
+              {locationFilterActive ? (
+                <button
+                  type="button"
+                  title="Clear location filter — overview for all sites"
+                  aria-label={`In file: ${counts.total} total rows. Clear location filter and return to all locations.`}
+                  onClick={() => {
+                    setLocationFilter(LOCATION_FILTER_ALL);
+                    queueMicrotask(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+                  }}
+                  className="rounded-2xl border border-border bg-card/80 px-3 py-4 text-center shadow-md shadow-black/20 backdrop-blur-sm outline-offset-4 transition-colors cursor-pointer hover:bg-card active:scale-[0.98] touch-manipulation motion-reduce:active:scale-100"
+                >
+                  <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                    In file
+                  </p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                    {counts.total}
+                  </p>
+                  <p className="mt-0.5 text-[0.65rem] text-muted-foreground">total rows</p>
+                </button>
+              ) : (
+                <div className="rounded-2xl border border-border bg-card/80 px-3 py-4 text-center shadow-md shadow-black/20 backdrop-blur-sm">
+                  <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                    In file
+                  </p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                    {counts.total}
+                  </p>
+                  <p className="mt-0.5 text-[0.65rem] text-muted-foreground">total rows</p>
+                </div>
+              )}
             </div>
             <LocationFilterBar
               value={locationFilter}
@@ -1079,19 +1107,13 @@ export function AssetTable({
             />
             {hasSupabaseConfig() && counts.total > 0 ? (
               <section
+                aria-labelledby="queue-extras-heading"
                 className={cn(
-                  "overflow-hidden rounded-2xl border border-dashed border-cyan-400/45 bg-gradient-to-br from-cyan-950/80 via-teal-950/45 to-slate-950/40 shadow-lg shadow-cyan-950/35 ring-1 ring-cyan-400/15 backdrop-blur-sm",
+                  "rounded-2xl border border-dashed border-cyan-400/45 bg-gradient-to-br from-cyan-950/80 via-teal-950/45 to-slate-950/40 p-3 shadow-lg shadow-cyan-950/35 ring-1 ring-cyan-400/15 backdrop-blur-sm sm:p-3.5",
                   (discoveredSaving || findLookupBusy) && "pointer-events-none opacity-70"
                 )}
               >
-                <button
-                  type="button"
-                  id="queue-extras-trigger"
-                  aria-expanded={queueExtrasOpen}
-                  aria-controls="queue-extras-panel"
-                  onClick={() => setQueueExtrasOpen((o) => !o)}
-                  className="flex w-full touch-manipulation items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.04] sm:px-3.5 sm:py-3"
-                >
+                <div className="flex items-start gap-2.5">
                   <span
                     className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-100 ring-1 ring-cyan-400/40"
                     aria-hidden
@@ -1102,94 +1124,71 @@ export function AssetTable({
                       <PackagePlus className="size-4 opacity-95" />
                     )}
                   </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold leading-tight text-cyan-50">
+                  <div className="min-w-0 flex-1">
+                    <h2
+                      id="queue-extras-heading"
+                      className="text-sm font-semibold leading-tight text-cyan-50"
+                    >
                       Not on the worksheet?
-                    </span>
-                    <span className="mt-0.5 block text-[0.7rem] leading-snug text-cyan-200/75">
-                      {queueExtrasOpen
-                        ? "Search by serial/tag, or add a new row."
-                        : "Tap to search or add — keeps the queue compact."}
-                    </span>
-                  </span>
-                  <ChevronDownIcon
-                    className={cn(
-                      "size-5 shrink-0 text-cyan-300/90 transition-transform duration-200",
-                      queueExtrasOpen && "rotate-180"
-                    )}
-                    aria-hidden
-                  />
-                </button>
-                <div
-                  id="queue-extras-panel"
-                  role="region"
-                  aria-labelledby="queue-extras-trigger"
-                  className={cn(
-                    "grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
-                    queueExtrasOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-                  )}
-                >
-                  <div className="min-h-0 overflow-hidden">
-                    <div className="border-t border-cyan-500/20 px-3 pb-3 pt-1 sm:px-3.5">
-                      <p
-                        id="manual-add-option-heading"
-                        className="sr-only"
+                    </h2>
+                    <p className="mt-0.5 text-[0.7rem] leading-snug text-cyan-200/80">
+                      Look up an existing row, or add hardware missing from the import.
+                    </p>
+                    <p id="manual-add-option-heading" className="sr-only">
+                      Optional: find equipment on the worksheet or add a new row
+                    </p>
+                    <div className="mt-2.5 grid grid-cols-2 gap-2">
+                      <Button
+                        type="button"
+                        disabled={discoveredSaving || findLookupBusy}
+                        aria-busy={findLookupBusy}
+                        aria-describedby="manual-add-option-heading"
+                        onClick={() => {
+                          setFindDialogMountKey((k) => k + 1);
+                          setFindDialogOpen(true);
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="h-auto min-h-11 touch-manipulation flex-col items-stretch justify-center gap-0.5 rounded-xl border-teal-400/45 bg-teal-950/35 px-2 py-2.5 text-center text-xs font-semibold text-teal-50 shadow-sm hover:bg-teal-950/55 sm:min-h-12 sm:text-sm"
                       >
-                        Optional: find equipment on the worksheet or add a new row
-                      </p>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        <Button
-                          type="button"
-                          disabled={discoveredSaving || findLookupBusy}
-                          aria-busy={findLookupBusy}
-                          aria-describedby="manual-add-option-heading"
-                          onClick={() => {
-                            setFindDialogMountKey((k) => k + 1);
-                            setFindDialogOpen(true);
-                          }}
-                          variant="outline"
-                          size="sm"
-                          className="h-11 min-h-11 touch-manipulation gap-2 rounded-xl border-teal-400/45 bg-teal-950/35 text-sm font-semibold text-teal-50 shadow-sm hover:bg-teal-950/55"
-                        >
+                        <span className="flex items-center justify-center gap-1.5">
                           <SearchIcon className="size-4 shrink-0 opacity-90" aria-hidden />
-                          <span className="min-w-0 text-left leading-snug">
-                            Look up
-                            <span className="block text-[0.65rem] font-normal text-teal-200/80">
-                              Serial, asset ID, model…
-                            </span>
+                          Look up
+                        </span>
+                        <span className="block font-normal text-[0.62rem] leading-tight text-teal-200/85">
+                          Serial, asset ID, model…
+                        </span>
+                      </Button>
+                      <Button
+                        type="button"
+                        disabled={discoveredSaving || findLookupBusy}
+                        aria-busy={discoveredSaving}
+                        aria-describedby="manual-add-option-heading"
+                        onClick={() => {
+                          setDiscoveredPrefillSerial(null);
+                          setDiscoveredFormKey((k) => k + 1);
+                          setDiscoveredDialogOpen(true);
+                        }}
+                        size="sm"
+                        className="h-auto min-h-11 touch-manipulation flex-col items-stretch justify-center gap-0.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 px-2 py-2.5 text-center text-xs font-semibold text-white shadow-md shadow-teal-950/40 ring-1 ring-white/10 hover:from-cyan-500 hover:to-teal-500 sm:min-h-12 sm:text-sm"
+                      >
+                        {discoveredSaving ? (
+                          <span className="flex items-center justify-center gap-1.5">
+                            <Loader2Icon className="size-4 shrink-0 animate-spin" aria-hidden />
+                            Saving…
                           </span>
-                        </Button>
-                        <Button
-                          type="button"
-                          disabled={discoveredSaving || findLookupBusy}
-                          aria-busy={discoveredSaving}
-                          aria-describedby="manual-add-option-heading"
-                          onClick={() => {
-                            setDiscoveredPrefillSerial(null);
-                            setDiscoveredFormKey((k) => k + 1);
-                            setDiscoveredDialogOpen(true);
-                          }}
-                          size="sm"
-                          className="h-11 min-h-11 touch-manipulation gap-2 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 text-sm font-semibold text-white shadow-md shadow-teal-950/40 ring-1 ring-white/10 hover:from-cyan-500 hover:to-teal-500"
-                        >
-                          {discoveredSaving ? (
-                            <>
-                              <Loader2Icon className="size-4 shrink-0 animate-spin" aria-hidden />
-                              Saving…
-                            </>
-                          ) : (
-                            <>
-                              <span className="min-w-0 text-left leading-snug">
-                                Add new
-                                <span className="block text-[0.65rem] font-normal text-white/85">
-                                  Not on import
-                                </span>
-                              </span>
-                              <ChevronRightIcon className="size-4 shrink-0 opacity-90" aria-hidden />
-                            </>
-                          )}
-                        </Button>
-                      </div>
+                        ) : (
+                          <>
+                            <span className="flex items-center justify-center gap-1">
+                              Add new
+                              <ChevronRightIcon className="size-3.5 shrink-0 opacity-90" aria-hidden />
+                            </span>
+                            <span className="block font-normal text-[0.62rem] leading-tight text-white/85">
+                              Not on import
+                            </span>
+                          </>
+                        )}
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -1299,11 +1298,13 @@ export function AssetTable({
               </section>
             ) : null}
 
-            {inventoryView === "queue" && !loading && filteredPendingAssets.length > 0 ? (
+            {inventoryView === "queue" &&
+            !loading &&
+            locationFilterActive &&
+            filteredPendingAssets.length > 0 ? (
               <>
                 <h2 className="text-[0.7rem] font-bold uppercase tracking-[0.16em] text-muted-foreground">
-                  To scan
-                  {locationFilterActive ? " (filtered)" : null}
+                  To scan (filtered)
                 </h2>
                 <ul className="flex flex-col gap-4">
                   {filteredPendingAssets.map((asset) => (

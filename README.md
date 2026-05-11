@@ -1,6 +1,6 @@
 # Inventory
 
-Internal **ECS IT Operations** handheld scan queue: Next.js App Router UI, Supabase Auth (**invite-only**), table `inventory_items`, and CSV export.
+Internal **ECS IT Operations** handheld scan queue: Next.js App Router UI, Supabase Auth (**invite-only**), table `inventory_items`, and Excel (`.xlsx`) export.
 
 ## Prerequisites
 
@@ -9,11 +9,12 @@ Internal **ECS IT Operations** handheld scan queue: Next.js App Router UI, Supab
 
 ## Environment
 
-Create `.env.local` (same keys as `.env.example`):
+Create `.env.local` from `.env.example`:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_SITE_URL` — e.g. `http://localhost:3000` in dev and your deployed URL on Vercel
+
+In Supabase **Authentication → URL configuration**, set **Site URL** and **Redirect URLs** to your real app origin (e.g. `http://localhost:3000` in dev); the app does not read a separate site URL from env.
 
 ## Authentication (invite-only)
 
@@ -36,4 +37,4 @@ npm run build
 
 ## Flow
 
-Sign in → **To scan** marks devices live → **Done** opens the scanned-only list with undo confirmation → **Download** exports CSV. Footer shows project attribution.
+Sign in → **To scan** marks devices live → **Done** opens the scanned-only list with undo confirmation → **Download spreadsheet** exports an `.xlsx` workbook. Footer shows project attribution.
