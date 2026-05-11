@@ -1,8 +1,9 @@
 "use client";
 
-import { MapPinIcon } from "lucide-react";
+import { Loader2Icon, MapPinIcon, SearchXIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ScanButton } from "@/components/ScanButton";
 import type { Asset } from "@/types/asset";
 
@@ -23,12 +24,25 @@ function formatTs(iso: string | null) {
 type AssetRowProps = {
   asset: Asset;
   scanning: boolean;
+  notFoundBusy: boolean;
   onScan: (asset: Asset) => void;
+  onNotFound: (asset: Asset) => void;
 };
 
-export function AssetRow({ asset, scanning, onScan }: AssetRowProps) {
+export function AssetRow({
+  asset,
+  scanning,
+  notFoundBusy,
+  onScan,
+  onNotFound,
+}: AssetRowProps) {
   const scanned = asset.status === "scanned";
+  const notFound = asset.status === "not_found";
+  const rowBusy = scanning || notFoundBusy;
   const locationText = asset.location?.trim();
+  const serialText = asset.serial_id?.trim();
+  const brandText = asset.manufacturer?.trim();
+  const modelText = asset.model?.trim();
 
   return (
     <li>
@@ -37,13 +51,19 @@ export function AssetRow({ asset, scanning, onScan }: AssetRowProps) {
           "overflow-hidden rounded-2xl border bg-card/90 shadow-lg shadow-black/25 ring-1 ring-white/[0.04] backdrop-blur-sm transition-shadow",
           scanned
             ? "border-emerald-500/35 ring-emerald-500/15"
-            : "border-border ring-transparent"
+            : notFound
+              ? "border-violet-500/35 ring-violet-500/15"
+              : "border-border ring-transparent"
         )}
       >
         <div
           className={cn(
             "h-1 w-full bg-gradient-to-r",
-            scanned ? "from-emerald-500 to-teal-400" : "from-muted to-transparent"
+            scanned
+              ? "from-emerald-500 to-teal-400"
+              : notFound
+                ? "from-violet-500 to-fuchsia-500/80"
+                : "from-muted to-transparent"
           )}
         />
 
@@ -63,10 +83,12 @@ export function AssetRow({ asset, scanning, onScan }: AssetRowProps) {
               className={
                 scanned
                   ? "shrink-0 border-transparent bg-emerald-500/20 px-3 py-1 text-sm font-semibold text-emerald-300 ring-1 ring-emerald-400/35"
-                  : "shrink-0 border-transparent bg-muted px-3 py-1 text-sm font-medium text-muted-foreground ring-1 ring-border"
+                  : notFound
+                    ? "shrink-0 border-transparent bg-violet-500/20 px-3 py-1 text-sm font-semibold text-violet-200 ring-1 ring-violet-400/35"
+                    : "shrink-0 border-transparent bg-muted px-3 py-1 text-sm font-medium text-muted-foreground ring-1 ring-border"
               }
             >
-              {scanned ? "Scanned" : "Needs scan"}
+              {scanned ? "Scanned" : notFound ? "Not found at location" : "Needs scan"}
             </Badge>
           </div>
 
@@ -95,6 +117,24 @@ export function AssetRow({ asset, scanning, onScan }: AssetRowProps) {
 
           <dl className="grid grid-cols-1 gap-3 rounded-xl bg-background/60 px-4 py-3 text-sm ring-1 ring-white/[0.06]">
             <div className="flex flex-wrap justify-between gap-2 gap-y-1">
+              <dt className="text-muted-foreground">Serial / tag on file</dt>
+              <dd className="max-w-[65%] text-right font-mono text-xs font-medium text-foreground break-all">
+                {serialText && serialText.length > 0 ? serialText : "—"}
+              </dd>
+            </div>
+            <div className="flex flex-wrap justify-between gap-2 gap-y-1">
+              <dt className="text-muted-foreground">Brand (manufacturer)</dt>
+              <dd className="max-w-[65%] text-right font-medium text-foreground break-words">
+                {brandText && brandText.length > 0 ? brandText : "—"}
+              </dd>
+            </div>
+            <div className="flex flex-wrap justify-between gap-2 gap-y-1">
+              <dt className="text-muted-foreground">System type (model)</dt>
+              <dd className="max-w-[65%] text-right font-medium text-foreground break-words">
+                {modelText && modelText.length > 0 ? modelText : "—"}
+              </dd>
+            </div>
+            <div className="flex flex-wrap justify-between gap-2 gap-y-1">
               <dt className="text-muted-foreground">Last scan by</dt>
               <dd className="font-medium text-foreground">{asset.scanned_by ?? "—"}</dd>
             </div>
@@ -106,11 +146,35 @@ export function AssetRow({ asset, scanning, onScan }: AssetRowProps) {
             </div>
           </dl>
 
-          <ScanButton
-            asset={asset}
-            scanning={scanning}
-            onScan={() => onScan(asset)}
-          />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <ScanButton
+              asset={asset}
+              scanning={scanning}
+              siblingBusy={notFoundBusy}
+              onScan={() => onScan(asset)}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              disabled={asset.status !== "pending" || rowBusy}
+              aria-busy={notFoundBusy}
+              onClick={() => onNotFound(asset)}
+              className="h-14 min-h-14 w-full touch-manipulation gap-2 rounded-2xl border-violet-500/40 bg-violet-950/35 text-base font-semibold text-violet-100 shadow-md shadow-black/20 hover:bg-violet-950/55 hover:text-violet-50"
+            >
+              {notFoundBusy ? (
+                <>
+                  <Loader2Icon className="size-5 shrink-0 animate-spin" aria-hidden />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <SearchXIcon className="size-5 shrink-0 opacity-90" aria-hidden />
+                  Not found at location
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </article>
     </li>

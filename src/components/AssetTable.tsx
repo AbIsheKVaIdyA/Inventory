@@ -1,6 +1,13 @@
 "use client";
 
-import { ArrowLeftIcon, CheckCheckIcon, Loader2Icon, RefreshCwIcon, RotateCcwIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  CheckCheckIcon,
+  Loader2Icon,
+  PackagePlus,
+  RefreshCwIcon,
+  RotateCcwIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -8,8 +15,12 @@ import { Button } from "@/components/ui/button";
 
 
 import {
+  INVENTORY_STATUS_DISCOVERED_ON_SCAN,
+  INVENTORY_STATUS_NOT_FOUND,
+  getInventoryItemsSelectColumns,
   inventoryItemFromRecord,
   inventoryItemToAsset,
+  inventoryStatusAfterUndoScan,
   mergeInventoryRow,
   sortInventoryRows,
   type InventoryItemRow,
@@ -19,6 +30,7 @@ import {
   LOCATION_FILTER_UNSET,
   assetMatchesLocationFilter,
   buildLocationFilterOptions,
+  distinctLocationPickerOptionsFromRows,
 } from "@/lib/location-filter";
 import { getSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase/browser-client";
 import { fetchAllInventoryItemRows } from "@/lib/supabase/fetch-all-inventory-items";
@@ -27,6 +39,10 @@ import type { Asset } from "@/types/asset";
 
 import { AssetRow } from "@/components/AssetRow";
 import { CelebrationToast } from "@/components/CelebrationToast";
+import {
+  AddDiscoveredSystemDialog,
+  type DiscoveredSystemPayload,
+} from "@/components/AddDiscoveredSystemDialog";
 import { DownloadButton } from "@/components/DownloadButton";
 import { FinishLocationAlert } from "@/components/FinishLocationAlert";
 import { Header } from "@/components/Header";
@@ -50,6 +66,10 @@ export function AssetTable({
   const [realtimeIssue, setRealtimeIssue] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [notFoundId, setNotFoundId] = useState<string | null>(null);
+  const [discoveredDialogOpen, setDiscoveredDialogOpen] = useState(false);
+  const [discoveredFormKey, setDiscoveredFormKey] = useState(0);
+  const [discoveredSaving, setDiscoveredSaving] = useState(false);
   const [unscanningId, setUnscanningId] = useState<string | null>(null);
   const [bulkScanning, setBulkScanning] = useState(false);
   const [bulkUnscanning, setBulkUnscanning] = useState(false);
@@ -59,6 +79,7 @@ export function AssetTable({
   const [toastTitle, setToastTitle] = useState("Location complete!");
   const [toastMessage, setToastMessage] = useState("");
   const rollbackRef = useRef<InventoryItemRow | null>(null);
+  const notFoundRollbackRef = useRef<InventoryItemRow | null>(null);
   const unscanRollbackRef = useRef<InventoryItemRow | null>(null);
   const userRef = useRef(scannerEmail);
   const [locationFilter, setLocationFilter] = useState<string>(LOCATION_FILTER_ALL);
@@ -76,8 +97,11 @@ export function AssetTable({
     [assets]
   );
 
-  const scannedAssets = useMemo(() => {
-    const list = assets.filter((a) => a.status === "scanned");
+  /** Scanned + not-found rows (out of the pending queue); shown in Done view */
+  const resolvedAssets = useMemo(() => {
+    const list = assets.filter(
+      (a) => a.status === "scanned" || a.status === "not_found"
+    );
     return [...list].sort((a, b) => {
       const ta = a.scanned_at ?? "";
       const tb = b.scanned_at ?? "";
@@ -90,6 +114,17 @@ export function AssetTable({
     [assets]
   );
 
+  const discoveredLocationOptions = useMemo(
+    () => distinctLocationPickerOptionsFromRows(inventoryRows),
+    [inventoryRows]
+  );
+
+  const preferredLocationForDiscovered = useMemo(() => {
+    if (locationFilter === LOCATION_FILTER_ALL) return null;
+    if (locationFilter === LOCATION_FILTER_UNSET) return "";
+    return locationFilter;
+  }, [locationFilter]);
+
   const filteredPendingAssets = useMemo(
     () =>
       pendingAssets.filter((a) =>
@@ -98,12 +133,12 @@ export function AssetTable({
     [pendingAssets, locationFilter]
   );
 
-  const filteredScannedAssets = useMemo(
+  const filteredResolvedAssets = useMemo(
     () =>
-      scannedAssets.filter((a) =>
+      resolvedAssets.filter((a) =>
         assetMatchesLocationFilter(a, locationFilter)
       ),
-    [scannedAssets, locationFilter]
+    [resolvedAssets, locationFilter]
   );
 
   const locationFilterActive = locationFilter !== LOCATION_FILTER_ALL;
@@ -118,20 +153,24 @@ export function AssetTable({
 
   const counts = useMemo(() => {
     const scanned = inventoryRows.filter((r) => r.scan_status === "scanned").length;
+    const notFound = inventoryRows.filter((r) => r.scan_status === "not_found").length;
+    const pending = inventoryRows.filter((r) => r.scan_status === "pending").length;
     return {
       total: inventoryRows.length,
       scanned,
-      pending: inventoryRows.length - scanned,
+      notFound,
+      resolved: scanned + notFound,
+      pending,
     };
   }, [inventoryRows]);
 
-  const canOpenScannedView = filteredScannedAssets.length > 0;
+  const canOpenScannedView = filteredResolvedAssets.length > 0;
   const doneTileTitle =
     canOpenScannedView
       ? "Open scanned-only list — use Undo scan to return rows to the queue"
-      : locationFilterActive && counts.scanned > 0
-        ? "No scanned rows at this location. Clear the filter to see scanned items elsewhere."
-        : "Nothing scanned yet";
+      : locationFilterActive && counts.resolved > 0
+        ? "No completed rows at this location. Clear the filter to see items elsewhere."
+        : "Nothing completed yet";
 
   useEffect(() => {
     if (!toastOpen) return;
@@ -148,10 +187,10 @@ export function AssetTable({
   useEffect(() => {
     if (inventoryView !== "scanned") return;
     if (loading) return;
-    if (counts.total === 0 || counts.scanned === 0) {
+    if (counts.total === 0 || counts.resolved === 0) {
       queueMicrotask(() => setInventoryView("queue"));
     }
-  }, [inventoryView, counts.total, counts.scanned, loading]);
+  }, [inventoryView, counts.total, counts.resolved, loading]);
 
   useEffect(() => {
     userRef.current = scannerEmail;
@@ -295,7 +334,7 @@ export function AssetTable({
   const handleScan = useCallback(
     async (asset: Asset) => {
       const userNow = userRef.current;
-      if (!userNow || asset.status === "scanned") return;
+      if (!userNow || asset.status !== "pending") return;
 
       const nowIso = new Date().toISOString();
 
@@ -303,7 +342,7 @@ export function AssetTable({
 
       setInventoryRows((curr) => {
         const prevRow = curr.find((r) => r.id === asset.id);
-        if (!prevRow || prevRow.scan_status === "scanned") return curr;
+        if (!prevRow || prevRow.scan_status !== "pending") return curr;
         rollbackRef.current = { ...prevRow };
         return sortInventoryRows(
           curr.map((r) =>
@@ -355,15 +394,139 @@ export function AssetTable({
     []
   );
 
-  const handleUnscan = useCallback(async (asset: Asset) => {
-    if (asset.status !== "scanned") return;
+  const handleNotFound = useCallback(async (asset: Asset) => {
+    const userNow = userRef.current;
+    if (!userNow || asset.status !== "pending") return;
+
+    const nowIso = new Date().toISOString();
 
     setMutationError(null);
 
     setInventoryRows((curr) => {
       const prevRow = curr.find((r) => r.id === asset.id);
-      if (!prevRow || prevRow.scan_status !== "scanned") return curr;
+      if (!prevRow || prevRow.scan_status !== "pending") return curr;
+      notFoundRollbackRef.current = { ...prevRow };
+      return sortInventoryRows(
+        curr.map((r) =>
+          r.id === asset.id
+            ? {
+                ...r,
+                scan_status: "not_found",
+                inventory_status: INVENTORY_STATUS_NOT_FOUND,
+                scanned_by: userNow,
+                scanned_at: nowIso,
+              }
+            : r
+        )
+      );
+    });
+
+    setNotFoundId(asset.id);
+
+    try {
+      const sb = getSupabaseBrowserClient();
+      const { error } = await sb
+        .from("inventory_items")
+        .update({
+          scan_status: "not_found",
+          inventory_status: INVENTORY_STATUS_NOT_FOUND,
+          scanned_by: userNow,
+          scanned_at: nowIso,
+        })
+        .eq("id", asset.id);
+      if (error) throw error;
+
+      notFoundRollbackRef.current = null;
+    } catch (e) {
+      const prevRow = notFoundRollbackRef.current;
+      if (prevRow) {
+        setInventoryRows((curr) =>
+          sortInventoryRows(
+            curr.map((r) => (r.id === asset.id ? prevRow : r))
+          )
+        );
+      }
+      const msg =
+        e instanceof Error
+          ? e.message
+          : "Update failed — check network / Supabase.";
+      setMutationError(msg);
+    } finally {
+      setNotFoundId(null);
+    }
+  }, []);
+
+  const handleInsertDiscoveredSystem = useCallback(
+    async (payload: DiscoveredSystemPayload) => {
+      const userNow = userRef.current;
+      if (!userNow) return;
+
+      const serial_id = payload.serial_id.trim();
+      if (!serial_id) return;
+      const locationNorm = payload.location.trim() || null;
+      const manufacturerNorm = payload.manufacturer.trim() || null;
+      const modelNorm = payload.model.trim() || null;
+      const nowIso = new Date().toISOString();
+
+      setMutationError(null);
+      setDiscoveredSaving(true);
+
+      try {
+        const sb = getSupabaseBrowserClient();
+        const insertRow = {
+          serial_id,
+          location: locationNorm,
+          manufacturer: manufacturerNorm,
+          model: modelNorm,
+          scan_status: "scanned" as const,
+          scanned_by: userNow,
+          scanned_at: nowIso,
+          inventory_status: INVENTORY_STATUS_DISCOVERED_ON_SCAN,
+        };
+        const { data, error } = await sb
+          .from("inventory_items")
+          .insert(insertRow)
+          .select(getInventoryItemsSelectColumns())
+          .single();
+        if (error) throw error;
+        if (!data || typeof data !== "object") {
+          throw new Error("No row returned after insert.");
+        }
+
+        const row = inventoryItemFromRecord(data as unknown as Record<string, unknown>);
+        if (!row) throw new Error("Could not read new row from database.");
+
+        setInventoryRows((curr) => {
+          if (curr.some((r) => r.id === row.id)) return sortInventoryRows(curr);
+          return sortInventoryRows([...curr, row]);
+        });
+        setDiscoveredDialogOpen(false);
+      } catch (e) {
+        const msg =
+          e instanceof Error ? e.message : "Could not add row — try again.";
+        setMutationError(msg);
+      } finally {
+        setDiscoveredSaving(false);
+      }
+    },
+    []
+  );
+
+  const handleUnscan = useCallback(async (asset: Asset) => {
+    if (asset.status !== "scanned" && asset.status !== "not_found") return;
+
+    setMutationError(null);
+
+    setInventoryRows((curr) => {
+      const prevRow = curr.find((r) => r.id === asset.id);
+      if (
+        !prevRow ||
+        (prevRow.scan_status !== "scanned" && prevRow.scan_status !== "not_found")
+      ) {
+        return curr;
+      }
       unscanRollbackRef.current = { ...prevRow };
+      const nextInventoryStatus = inventoryStatusAfterUndoScan(prevRow);
       return sortInventoryRows(
         curr.map((r) =>
           r.id === asset.id
@@ -372,6 +535,7 @@ export function AssetTable({
                 scan_status: "pending",
                 scanned_by: null,
                 scanned_at: null,
+                inventory_status: nextInventoryStatus,
               }
             : r
         )
@@ -382,14 +546,28 @@ export function AssetTable({
 
     try {
       const sb = getSupabaseBrowserClient();
-      const { error } = await sb
-        .from("inventory_items")
-        .update({
-          scan_status: "pending",
-          scanned_by: null,
-          scanned_at: null,
-        })
-        .eq("id", asset.id);
+      const prevRow = unscanRollbackRef.current;
+      const patch =
+        prevRow?.scan_status === "not_found"
+          ? {
+              scan_status: "pending" as const,
+              scanned_by: null as null,
+              scanned_at: null as null,
+              inventory_status: null as null,
+            }
+          : prevRow?.inventory_status === INVENTORY_STATUS_DISCOVERED_ON_SCAN
+            ? {
+                scan_status: "pending" as const,
+                scanned_by: null as null,
+                scanned_at: null as null,
+                inventory_status: null as null,
+              }
+            : {
+                scan_status: "pending" as const,
+                scanned_by: null as null,
+                scanned_at: null as null,
+              };
+      const { error } = await sb.from("inventory_items").update(patch).eq("id", asset.id);
       if (error) throw error;
 
       unscanRollbackRef.current = null;
@@ -481,9 +659,9 @@ export function AssetTable({
   ]);
 
   const handleReturnLocationToQueue = useCallback(async () => {
-    if (!locationFilterActive || filteredScannedAssets.length === 0 || bulkUnscanning) return;
+    if (!locationFilterActive || filteredResolvedAssets.length === 0 || bulkUnscanning) return;
 
-    const targetIds = filteredScannedAssets.map((asset) => asset.id);
+    const targetIds = filteredResolvedAssets.map((asset) => asset.id);
     const targetSet = new Set(targetIds);
     const prevRows = inventoryRows
       .filter((row) => targetSet.has(row.id))
@@ -496,30 +674,51 @@ export function AssetTable({
 
     setInventoryRows((curr) =>
       sortInventoryRows(
-        curr.map((r) =>
-          targetSet.has(r.id)
-            ? {
-                ...r,
-                scan_status: "pending",
-                scanned_by: null,
-                scanned_at: null,
-              }
-            : r
-        )
+        curr.map((r) => {
+          if (!targetSet.has(r.id)) return r;
+          const prev = prevById.get(r.id)!;
+          return {
+            ...r,
+            scan_status: "pending",
+            scanned_by: null,
+            scanned_at: null,
+            inventory_status: inventoryStatusAfterUndoScan(prev),
+          };
+        })
       )
     );
 
     try {
       const sb = getSupabaseBrowserClient();
-      const { error } = await sb
-        .from("inventory_items")
-        .update({
-          scan_status: "pending",
-          scanned_by: null,
-          scanned_at: null,
+      const results = await Promise.all(
+        targetIds.map((id) => {
+          const prev = prevById.get(id)!;
+          const patch =
+            prev.scan_status === "not_found"
+              ? {
+                  scan_status: "pending" as const,
+                  scanned_by: null as null,
+                  scanned_at: null as null,
+                  inventory_status: null as null,
+                }
+              : prev.inventory_status === INVENTORY_STATUS_DISCOVERED_ON_SCAN
+                ? {
+                    scan_status: "pending" as const,
+                    scanned_by: null as null,
+                    scanned_at: null as null,
+                    inventory_status: null as null,
+                  }
+                : {
+                    scan_status: "pending" as const,
+                    scanned_by: null as null,
+                    scanned_at: null as null,
+                  };
+          return sb.from("inventory_items").update(patch).eq("id", id);
         })
-        .in("id", targetIds);
-      if (error) throw error;
+      );
+      for (const res of results) {
+        if (res.error) throw res.error;
+      }
 
       setToastTitle("Location reopened");
       setToastMessage(
@@ -540,7 +739,7 @@ export function AssetTable({
     }
   }, [
     bulkUnscanning,
-    filteredScannedAssets,
+    filteredResolvedAssets,
     inventoryRows,
     locationFilterActive,
     selectedLocationLabel,
@@ -561,7 +760,7 @@ export function AssetTable({
         open={showReturnLocationAlert}
         busy={bulkUnscanning}
         locationLabel={selectedLocationLabel}
-        affectedCount={filteredScannedAssets.length}
+        affectedCount={filteredResolvedAssets.length}
         mode="unscan"
         onDismiss={() => setShowReturnLocationAlert(false)}
         onConfirm={() => void handleReturnLocationToQueue()}
@@ -570,6 +769,15 @@ export function AssetTable({
         open={toastOpen}
         title={toastTitle}
         message={toastMessage}
+      />
+      <AddDiscoveredSystemDialog
+        open={discoveredDialogOpen}
+        busy={discoveredSaving}
+        formMountKey={discoveredFormKey}
+        locationOptions={discoveredLocationOptions}
+        preferredLocation={preferredLocationForDiscovered}
+        onDismiss={() => setDiscoveredDialogOpen(false)}
+        onSave={(p) => void handleInsertDiscoveredSystem(p)}
       />
       <Header
         currentDisplayName={scannerDisplayName}
@@ -623,14 +831,14 @@ export function AssetTable({
             </Button>
             <p className="text-sm leading-relaxed text-muted-foreground">
               <span className="tabular-nums font-semibold text-foreground">
-                {filteredScannedAssets.length}
+                {filteredResolvedAssets.length}
               </span>{" "}
-              scanned shown
+              completed (scanned or not found at location)
               {locationFilterActive ? (
                 <>
                   {" "}
                   for this filter (
-                  <span className="tabular-nums">{counts.scanned}</span> total scanned in file).
+                  <span className="tabular-nums">{counts.resolved}</span> total completed in file).
                 </>
               ) : (
                 <> ({counts.total} rows in file).</>
@@ -641,7 +849,7 @@ export function AssetTable({
               onChange={setLocationFilter}
               options={locationFilterOptions}
             />
-            {locationFilterActive && filteredScannedAssets.length > 0 ? (
+            {locationFilterActive && filteredResolvedAssets.length > 0 ? (
               <Button
                 type="button"
                 onClick={() => setShowReturnLocationAlert(true)}
@@ -661,10 +869,10 @@ export function AssetTable({
                 )}
               </Button>
             ) : null}
-            {filteredScannedAssets.length === 0 ? (
+            {filteredResolvedAssets.length === 0 ? (
               <section className="rounded-2xl border border-amber-500/35 bg-amber-950/35 px-4 py-5 text-center">
                 <p className="text-sm font-medium text-amber-50">
-                  No scanned items match this location filter.
+                  No completed items match this location filter.
                 </p>
                 <Button
                   type="button"
@@ -677,7 +885,7 @@ export function AssetTable({
               </section>
             ) : (
               <ScannedItemsSection
-                assets={filteredScannedAssets}
+                assets={filteredResolvedAssets}
                 unscanningId={unscanningId}
                 onUnscan={handleUnscan}
               />
@@ -722,7 +930,7 @@ export function AssetTable({
                 type="button"
                 disabled={!canOpenScannedView}
                 title={doneTileTitle}
-                aria-label={`Done: ${counts.scanned} scanned. ${doneTileTitle}`}
+                aria-label={`Done: ${counts.resolved} completed (scanned + not found at location). ${doneTileTitle}`}
                 onClick={() => openScannedView()}
                 className="rounded-2xl border border-border bg-card/80 px-3 py-4 text-center shadow-md shadow-black/20 backdrop-blur-sm outline-offset-4 transition-colors enabled:cursor-pointer enabled:hover:bg-card enabled:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:enabled:active:scale-100"
               >
@@ -730,7 +938,7 @@ export function AssetTable({
                   Done
                 </p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-400">
-                  {counts.scanned}
+                  {counts.resolved}
                 </p>
               </button>
               <div className="rounded-2xl border border-border bg-card/80 px-3 py-4 text-center shadow-md shadow-black/20 backdrop-blur-sm">
@@ -748,6 +956,31 @@ export function AssetTable({
               onChange={setLocationFilter}
               options={locationFilterOptions}
             />
+            {hasSupabaseConfig() && counts.total > 0 ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={discoveredSaving}
+                aria-busy={discoveredSaving}
+                onClick={() => {
+                  setDiscoveredFormKey((k) => k + 1);
+                  setDiscoveredDialogOpen(true);
+                }}
+                className="h-auto min-h-12 w-full touch-manipulation flex-col gap-1 rounded-2xl border-sky-500/40 bg-sky-950/25 px-4 py-3 text-sky-50 shadow-md shadow-black/15 hover:bg-sky-950/45"
+              >
+                <span className="flex items-center justify-center gap-2 text-base font-semibold">
+                  {discoveredSaving ? (
+                    <Loader2Icon className="size-5 shrink-0 animate-spin" aria-hidden />
+                  ) : (
+                    <PackagePlus className="size-5 shrink-0 opacity-90" aria-hidden />
+                  )}
+                  Add system not on worksheet
+                </span>
+                <span className="text-center text-xs font-normal leading-snug text-sky-200/80">
+                  For extra hardware you find on site: choose location, then serial / brand / model.
+                </span>
+              </Button>
+            ) : null}
             {locationFilterActive && filteredPendingCount > 0 ? (
               <Button
                 type="button"
@@ -864,7 +1097,9 @@ export function AssetTable({
                       key={asset.id}
                       asset={asset}
                       scanning={pendingId === asset.id}
+                      notFoundBusy={notFoundId === asset.id}
                       onScan={handleScan}
+                      onNotFound={handleNotFound}
                     />
                   ))}
                 </ul>
@@ -878,13 +1113,13 @@ export function AssetTable({
         inventoryView === "queue" &&
         counts.total > 0 &&
         pendingAssets.length === 0 &&
-        scannedAssets.length > 0 ? (
+        resolvedAssets.length > 0 ? (
           <section className="rounded-2xl border border-emerald-500/40 bg-emerald-950/40 px-5 py-8 text-center shadow-inner">
             <p className="text-lg font-semibold text-emerald-100">Queue is clear</p>
             <p className="mt-2 text-sm text-emerald-200/80">
-              Everything still pending has been scanned. Tap{" "}
-              <span className="font-semibold text-emerald-100">Done</span> to review scanned rows —
-              use Undo scan to send any row back.
+              Nothing left pending — items are scanned or marked not found at location. Tap{" "}
+              <span className="font-semibold text-emerald-100">Done</span> to review — use Undo to
+              return any row to the queue.
             </p>
           </section>
         ) : null}

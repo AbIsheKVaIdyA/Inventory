@@ -10,12 +10,24 @@ import { cn } from "@/lib/utils";
 type ScanButtonProps = {
   asset: Asset;
   scanning: boolean;
+  /** True while the paired row action (e.g. Not found at location) is in flight */
+  siblingBusy?: boolean;
   onScan: () => void;
   className?: string;
 };
 
-export function ScanButton({ asset, scanning, onScan, className }: ScanButtonProps) {
-  const disabled = asset.status === "scanned" || scanning;
+export function ScanButton({
+  asset,
+  scanning,
+  siblingBusy = false,
+  onScan,
+  className,
+}: ScanButtonProps) {
+  const disabled =
+    asset.status === "scanned" ||
+    asset.status === "not_found" ||
+    scanning ||
+    siblingBusy;
   const scanned = asset.status === "scanned";
 
   return (

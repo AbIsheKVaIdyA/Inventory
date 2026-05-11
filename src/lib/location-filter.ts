@@ -49,3 +49,24 @@ export function buildLocationFilterOptions(allAssets: Asset[]): LocationFilterOp
     count: pendingByKey.get(key) ?? 0,
   }));
 }
+
+export type LocationPickerOption = { value: string; label: string };
+
+/** Distinct locations from worksheet rows for “add discovered system” picker. */
+export function distinctLocationPickerOptionsFromRows(
+  rows: { location?: string | null }[]
+): LocationPickerOption[] {
+  const keys = new Set<string>();
+  for (const r of rows) {
+    keys.add(r.location?.trim() ?? "");
+  }
+  const sorted = [...keys].sort((a, b) => {
+    if (a === "") return 1;
+    if (b === "") return -1;
+    return a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+  });
+  return sorted.map((value) => ({
+    value,
+    label: value === "" ? "(No location on file)" : value,
+  }));
+}

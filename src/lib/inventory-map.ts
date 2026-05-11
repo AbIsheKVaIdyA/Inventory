@@ -45,13 +45,34 @@ export function displayLabelFromInventory(
   return "Unknown";
 }
 
+/** Worksheet `inventory_status` when user marks asset missing on site */
+export const INVENTORY_STATUS_NOT_FOUND = "Not found at location";
+
+/** Worksheet `inventory_status` when staff adds hardware not present on the import */
+export const INVENTORY_STATUS_DISCOVERED_ON_SCAN = "Discovered on scan";
+
+/** Worksheet status to keep when moving a row from scanned / not_found back to pending */
+export function inventoryStatusAfterUndoScan(
+  row: Pick<InventoryItemRow, "scan_status" | "inventory_status">
+): string | null {
+  if (row.scan_status === "not_found") return null;
+  if (row.inventory_status === INVENTORY_STATUS_DISCOVERED_ON_SCAN) return null;
+  return row.inventory_status ?? null;
+}
+
 export function inventoryItemToAsset(row: InventoryItemRow): Asset {
   const loc = row.location?.trim();
+  let status: Asset["status"] = "pending";
+  if (row.scan_status === "scanned") status = "scanned";
+  else if (row.scan_status === "not_found") status = "not_found";
   return {
     id: row.id,
     computer_name: displayLabelFromInventory(row),
     location: loc ? loc : null,
-    status: row.scan_status === "scanned" ? "scanned" : "pending",
+    serial_id: row.serial_id?.trim() ? row.serial_id.trim() : null,
+    manufacturer: row.manufacturer?.trim() ? row.manufacturer.trim() : null,
+    model: row.model?.trim() ? row.model.trim() : null,
+    status,
     scanned_by: row.scanned_by ?? null,
     scanned_at: row.scanned_at ?? null,
   };
@@ -120,22 +141,42 @@ export function sortInventoryRows(rows: InventoryItemRow[]): InventoryItemRow[] 
   );
 }
 
+function compareInventoryRowsForCsvExport(a: InventoryItemRow, b: InventoryItemRow): number {
+  const aDone = a.scan_status === "scanned" || a.scan_status === "not_found";
+  const bDone = b.scan_status === "scanned" || b.scan_status === "not_found";
+  if (aDone !== bDone) return aDone ? -1 : 1;
+  if (aDone && bDone) {
+    const byTime = (b.scanned_at ?? "").localeCompare(a.scanned_at ?? "");
+    if (byTime !== 0) return byTime;
+  }
+  return displayLabelFromInventory(a).localeCompare(displayLabelFromInventory(b));
+}
+
+function partitionInventoryRowsForCsvExport(rows: InventoryItemRow[]): {
+  main: InventoryItemRow[];
+  manual: InventoryItemRow[];
+} {
+  const main: InventoryItemRow[] = [];
+  const manual: InventoryItemRow[] = [];
+  for (const r of rows) {
+    if (r.inventory_status === INVENTORY_STATUS_DISCOVERED_ON_SCAN) manual.push(r);
+    else main.push(r);
+  }
+  return { main, manual };
+}
+
 /**
- * CSV export order: completed (scanned) first, newest scan first; then pending, by label.
+ * CSV / worksheet order: import rows first (completed first, newest scan first; then pending
+ * by label). Rows with `inventory_status` “Discovered on scan” (added on the floor) are last.
  */
 export function sortInventoryRowsForCsvExport(
   rows: InventoryItemRow[]
 ): InventoryItemRow[] {
-  return [...rows].sort((a, b) => {
-    const aDone = a.scan_status === "scanned";
-    const bDone = b.scan_status === "scanned";
-    if (aDone !== bDone) return aDone ? -1 : 1;
-    if (aDone && bDone) {
-      const byTime = (b.scanned_at ?? "").localeCompare(a.scanned_at ?? "");
-      if (byTime !== 0) return byTime;
-    }
-    return displayLabelFromInventory(a).localeCompare(displayLabelFromInventory(b));
-  });
+  const { main, manual } = partitionInventoryRowsForCsvExport(rows);
+  return [
+    ...[...main].sort(compareInventoryRowsForCsvExport),
+    ...[...manual].sort(compareInventoryRowsForCsvExport),
+  ];
 }
 
 /** CSV column order aligned with worksheet + scan fields */
@@ -181,4 +222,27 @@ export function inventoryRowCsvValues(row: InventoryItemRow): string[] {
     row.scanned_by ?? "",
     row.scanned_at ?? "",
   ];
+}
+
+/**
+ * CSV body lines for download: main worksheet rows, then two blank rows when both sections exist,
+ * then manually added (“Discovered on scan”) rows with their data.
+ */
+export function inventoryCsvBodyLines(rows: InventoryItemRow[]): string[][] {
+  const { main, manual } = partitionInventoryRowsForCsvExport(rows);
+  const sortedMain = [...main].sort(compareInventoryRowsForCsvExport);
+  const sortedManual = [...manual].sort(compareInventoryRowsForCsvExport);
+  const colCount = INVENTORY_CSV_HEADERS.length;
+  const blankRow = () => Array.from({ length: colCount }, () => "");
+
+  const lines: string[][] = sortedMain.map((r) => inventoryRowCsvValues(r));
+  if (sortedManual.length > 0) {
+    if (sortedMain.length > 0) {
+      lines.push(blankRow(), blankRow());
+    }
+    for (const r of sortedManual) {
+      lines.push(inventoryRowCsvValues(r));
+    }
+  }
+  return lines;
 }

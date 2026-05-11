@@ -57,12 +57,27 @@ function ScannedItemRow({
   showLocation?: boolean;
 }) {
   const locationText = asset.location?.trim();
+  const notFound = asset.status === "not_found";
 
   return (
-    <li className="rounded-2xl border border-emerald-500/20 bg-emerald-950/20 px-4 py-3 ring-1 ring-white/[0.04]">
+    <li
+      className={cn(
+        "rounded-2xl border px-4 py-3 ring-1 ring-white/[0.04]",
+        notFound
+          ? "border-violet-500/25 bg-violet-950/25"
+          : "border-emerald-500/20 bg-emerald-950/20"
+      )}
+    >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-mono text-sm font-semibold text-foreground">{asset.computer_name}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-mono text-sm font-semibold text-foreground">{asset.computer_name}</p>
+            {notFound ? (
+              <span className="rounded-md bg-violet-500/25 px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide text-violet-200 ring-1 ring-violet-400/30">
+                Not found at location
+              </span>
+            ) : null}
+          </div>
           {showLocation ? (
             <div className="mt-1 flex items-start gap-1.5 text-xs text-muted-foreground">
               <MapPinIcon className="size-3.5 shrink-0 mt-0.5 text-amber-500/90" aria-hidden />
@@ -146,10 +161,10 @@ export function ScannedItemsSection({
           id="scanned-heading"
           className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground"
         >
-          Scanned items
+          Completed scans
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          {assets.length} shown — Undo scan sends a machine back to the queue.
+          {assets.length} shown (scanned or not found at location) — Undo returns a row to the queue.
         </p>
         <div
           role="radiogroup"

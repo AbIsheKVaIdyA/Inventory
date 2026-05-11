@@ -62,7 +62,7 @@ export function UndoScanAlert({
               <span className="break-all font-mono font-semibold text-foreground">{name}</span>{" "}
               will move back to{" "}
               <span className="font-semibold text-foreground">&quot;To scan&quot;</span>. Anyone can mark
-              it scanned again.
+              it scanned or not found at location again. Worksheet status is restored where applicable.
             </AlertDialog.Description>
             <div className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
               <AlertDialog.Close
