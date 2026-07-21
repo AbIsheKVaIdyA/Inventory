@@ -38,3 +38,7 @@ npm run build
 ## Flow
 
 Sign in → **To scan** marks devices live → **Done** opens the scanned-only list with undo confirmation → **Download spreadsheet** exports an `.xlsx` workbook. Footer shows project attribution.
+
+## Public room info form (no login)
+
+Share **`/rooms`** (e.g. `https://your-app.vercel.app/rooms`). Submitters enter person details once, add multiple rooms, then submit. Rows land in Supabase table `room_assignments`. Apply migration `supabase/migrations/0004_room_assignments.sql` first, and edit `room_departments` / `room_buildings` lists as needed.
