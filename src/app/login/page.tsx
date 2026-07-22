@@ -197,16 +197,23 @@ function LoginForm() {
     setError(null);
     try {
       const sb = getSupabaseBrowserClient();
+      const normalizedEmail = email.trim().toLowerCase();
       const { error: signErr } = await sb.auth.signInWithPassword({
-        email: email.trim(),
+        email: normalizedEmail,
         password,
       });
       if (signErr) throw signErr;
       router.push(next);
       router.refresh();
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Sign-in failed.";
-      setError(msg);
+      const raw = e instanceof Error ? e.message : "Sign-in failed.";
+      if (/invalid login credentials/i.test(raw)) {
+        setError(
+          "Invalid login credentials. Use the exact invite email, and the password you set after the invite. If this is a new invite account that never worked at login, ask an admin to open Supabase → Authentication → Users and confirm the email (or reset the password there)."
+        );
+      } else {
+        setError(raw);
+      }
     } finally {
       setBusy(false);
     }

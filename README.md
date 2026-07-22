@@ -13,6 +13,7 @@ Create `.env.local` from `.env.example`:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` (optional, **recommended**) — used by `/api/auth/finalize-invite` so invited users can sign in with email/password after setting a password. Add the same key in Vercel env for Production.
 
 In Supabase **Authentication → URL configuration**, set **Site URL** and **Redirect URLs** to your real app origin (e.g. `http://localhost:3000` in dev); the app does not read a separate site URL from env.
 

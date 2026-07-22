@@ -6,7 +6,7 @@ import { Suspense, type FormEvent, useEffect, useState } from "react";
 
 import { AuthInviteProcessingOverlay } from "@/components/AuthInviteProcessingOverlay";
 import { Button } from "@/components/ui/button";
-import { hasCompletedInvitePassword, INVITE_PASSWORD_SET_KEY } from "@/lib/auth-invite-metadata";
+import { hasCompletedInvitePassword } from "@/lib/auth-invite-metadata";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase/browser-client";
 
@@ -92,11 +92,43 @@ function SetPasswordForm() {
 
     try {
       const sb = getSupabaseBrowserClient();
-      const { error: updateError } = await sb.auth.updateUser({
-        password,
-        data: { [INVITE_PASSWORD_SET_KEY]: true },
+
+      // Ensure cookies/session are fresh before the server route reads them.
+      const {
+        data: { user },
+        error: sessionError,
+      } = await sb.auth.getUser();
+      if (sessionError || !user?.email) {
+        throw new Error("Invite session expired. Open a fresh invite link from your email.");
+      }
+
+      const finalizeRes = await fetch("/api/auth/finalize-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ password }),
       });
-      if (updateError) throw updateError;
+      const finalizeBody = (await finalizeRes.json().catch(() => ({}))) as {
+        error?: string;
+        email?: string;
+      };
+      if (!finalizeRes.ok) {
+        throw new Error(finalizeBody.error || "Could not save your password.");
+      }
+
+      const email = (finalizeBody.email || user.email).trim().toLowerCase();
+
+      // Prove email+password login works (same path users take later).
+      await sb.auth.signOut({ scope: "local" });
+      const { error: signInError } = await sb.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (signInError) {
+        throw new Error(
+          `${signInError.message} Password may not have been saved for login. Ask an admin to confirm your email in Supabase (Auth → Users) or add SUPABASE_SERVICE_ROLE_KEY on the server and try again.`
+        );
+      }
 
       router.replace(next);
       router.refresh();
