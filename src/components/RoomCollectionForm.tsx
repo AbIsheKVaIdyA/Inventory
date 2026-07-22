@@ -1,126 +1,102 @@
 "use client";
 
 import {
+  CheckCircle2Icon,
   DownloadIcon,
   Loader2Icon,
+  PartyPopperIcon,
   PlusIcon,
   SendIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { downloadRoomAssignmentsSpreadsheet } from "@/lib/download-room-assignments-xlsx";
 import {
   draftRowToInsert,
+  type RoomAssignmentInsert,
   type RoomDraftRow,
   type RoomPersonFields,
 } from "@/lib/room-assignments";
 import { getSupabaseAnonBrowserClient, hasSupabaseConfig } from "@/lib/supabase/browser-client";
-import { cn } from "@/lib/utils";
 
-const emptyPerson: RoomPersonFields = {
-  firstname: "",
-  lastname: "",
-  netid: "",
-  job_title: "",
-};
+const DEPARTMENTS = [
+  "Bioengineering",
+  "Computer Science",
+  "Electrical Engineering",
+  "Materials Science and Engineering",
+  "Mechanical Engineering",
+  "Systems Engineering",
+] as const;
+
+const BUILDINGS = ["ECSW", "ECSN", "ECSS"] as const;
 
 const fieldClass =
   "h-12 w-full rounded-2xl border border-border bg-background px-3.5 text-base text-foreground shadow-inner outline-none touch-manipulation focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
 
-const labelClass = "mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground";
+const labelClass =
+  "mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground";
 
-type LookupOption = { name: string };
+function errMsg(error: unknown): string {
+  if (error && typeof error === "object") {
+    const e = error as { message?: string; details?: string; hint?: string; code?: string };
+    return [e.message, e.details, e.hint, e.code].filter(Boolean).join(" — ") || "Submit failed.";
+  }
+  if (error instanceof Error) return error.message;
+  return "Submit failed.";
+}
 
 export function RoomCollectionForm() {
-  const [person, setPerson] = useState<RoomPersonFields>(emptyPerson);
-  const [department, setDepartment] = useState("");
-  const [building, setBuilding] = useState("");
+  const [firstname, setFirstname] = useState("");
+  const [lastname, setLastname] = useState("");
+  const [netid, setNetid] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
   const [roomNumber, setRoomNumber] = useState("");
+  /** Increment to remount department/building selects back to placeholder. */
+  const [pickerEpoch, setPickerEpoch] = useState(0);
+  const departmentRef = useRef<HTMLSelectElement>(null);
+  const buildingRef = useRef<HTMLSelectElement>(null);
+
   const [draft, setDraft] = useState<RoomDraftRow[]>([]);
-  const [departments, setDepartments] = useState<LookupOption[]>([]);
-  const [buildings, setBuildings] = useState<LookupOption[]>([]);
-  const [lookupsLoading, setLookupsLoading] = useState(true);
-  const [lookupError, setLookupError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [submittedCount, setSubmittedCount] = useState<number | null>(null);
+  /** After successful submit: replace form with thank-you + submitted list. */
+  const [submittedRows, setSubmittedRows] = useState<RoomAssignmentInsert[] | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (!hasSupabaseConfig()) {
-        if (!cancelled) {
-          setLookupError("App is missing Supabase configuration.");
-          setLookupsLoading(false);
-        }
-        return;
-      }
-      try {
-        const sb = getSupabaseAnonBrowserClient();
-        const [deptRes, bldRes] = await Promise.all([
-          sb
-            .from("room_departments")
-            .select("name")
-            .eq("active", true)
-            .order("sort_order", { ascending: true })
-            .order("name", { ascending: true }),
-          sb
-            .from("room_buildings")
-            .select("name")
-            .eq("active", true)
-            .order("sort_order", { ascending: true })
-            .order("name", { ascending: true }),
-        ]);
-        if (cancelled) return;
-        if (deptRes.error) throw deptRes.error;
-        if (bldRes.error) throw bldRes.error;
-        setDepartments((deptRes.data ?? []) as LookupOption[]);
-        setBuildings((bldRes.data ?? []) as LookupOption[]);
-      } catch (e: unknown) {
-        if (cancelled) return;
-        const msg = e instanceof Error ? e.message : "Could not load department / building lists.";
-        setLookupError(
-          /relation|does not exist|42P01|PGRST/i.test(msg)
-            ? "Room tables are missing. Run the Supabase SQL migration (0004_room_assignments) first."
-            : msg
-        );
-      } finally {
-        if (!cancelled) setLookupsLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const resetRoomPickers = () => {
+    setRoomNumber("");
+    setPickerEpoch((n) => n + 1);
+  };
 
-  const personComplete = useMemo(() => {
-    return (
-      person.firstname.trim() &&
-      person.lastname.trim() &&
-      person.netid.trim() &&
-      person.job_title.trim()
-    );
-  }, [person]);
-
-  const setPersonField = (key: keyof RoomPersonFields, value: string) => {
-    setPerson((p) => ({ ...p, [key]: value }));
-    setSubmittedCount(null);
+  const resetAll = () => {
+    setFirstname("");
+    setLastname("");
+    setNetid("");
+    setJobTitle("");
+    setDraft([]);
+    resetRoomPickers();
   };
 
   const handleAddRoom = () => {
     setFormError(null);
-    setSubmittedCount(null);
-    if (!personComplete) {
+    const department = (departmentRef.current?.value ?? "").trim();
+    const building = (buildingRef.current?.value ?? "").trim();
+    const person: RoomPersonFields = {
+      firstname: firstname.trim(),
+      lastname: lastname.trim(),
+      netid: netid.trim(),
+      job_title: jobTitle.trim(),
+    };
+
+    if (!person.firstname || !person.lastname || !person.netid || !person.job_title) {
       setFormError("Fill first name, last name, NetID, and job title first.");
       return;
     }
-    if (!department.trim()) {
+    if (!department) {
       setFormError("Select a department.");
       return;
     }
-    if (!building.trim()) {
+    if (!building) {
       setFormError("Select a building.");
       return;
     }
@@ -129,40 +105,21 @@ export function RoomCollectionForm() {
       return;
     }
 
-    const next: RoomDraftRow = {
-      localId:
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `r-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      firstname: person.firstname.trim(),
-      lastname: person.lastname.trim(),
-      netid: person.netid.trim(),
-      job_title: person.job_title.trim(),
-      department: department.trim(),
-      building: building.trim(),
-      room_number: roomNumber.trim(),
-    };
-    setDraft((rows) => [...rows, next]);
-    setRoomNumber("");
-  };
-
-  const removeRow = (localId: string) => {
-    setDraft((rows) => rows.filter((r) => r.localId !== localId));
-    setSubmittedCount(null);
-  };
-
-  const handleDownloadDraft = () => {
-    if (draft.length === 0) return;
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-    downloadRoomAssignmentsSpreadsheet(
-      draft.map(draftRowToInsert),
-      `room-assignments-${stamp}.xlsx`
-    );
+    setDraft((rows) => [
+      ...rows,
+      {
+        localId: crypto.randomUUID(),
+        ...person,
+        department,
+        building,
+        room_number: roomNumber.trim(),
+      },
+    ]);
+    resetRoomPickers();
   };
 
   const handleSubmit = async () => {
     setFormError(null);
-    setSubmittedCount(null);
     if (draft.length === 0) {
       setFormError("Add at least one room before submitting.");
       return;
@@ -172,22 +129,65 @@ export function RoomCollectionForm() {
       return;
     }
 
+    const payload = draft.map(draftRowToInsert);
     setSubmitting(true);
     try {
       const sb = getSupabaseAnonBrowserClient();
-      const payload = draft.map(draftRowToInsert);
       const { error } = await sb.from("room_assignments").insert(payload);
-      if (error) throw error;
-      setSubmittedCount(payload.length);
-      setDraft([]);
-      setRoomNumber("");
+      if (error) {
+        setFormError(errMsg(error));
+        return;
+      }
+      setSubmittedRows(payload);
+      resetAll();
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Submit failed.";
-      setFormError(msg);
+      setFormError(errMsg(e));
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (submittedRows !== null) {
+    return (
+      <div className="mx-auto flex w-full max-w-lg flex-col gap-5 px-4 pb-8 pt-8 max-[361px]:px-3">
+        <section className="rounded-3xl border border-emerald-400/40 bg-gradient-to-b from-emerald-950 to-[#0a1210] p-6 text-center shadow-2xl shadow-black/40 ring-1 ring-emerald-500/25">
+          <span className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-emerald-500/25 text-emerald-300 ring-1 ring-emerald-400/45">
+            <PartyPopperIcon className="size-8" aria-hidden />
+          </span>
+          <h1 className="mt-5 text-2xl font-bold tracking-tight text-white">Thank you!</h1>
+          <p className="mt-2 text-sm leading-relaxed text-emerald-100/85">
+            That&apos;s all for today — have a good one. Here is what you submitted:
+          </p>
+
+          <ul className="mt-6 flex flex-col gap-2 text-left">
+            {submittedRows.map((row, i) => (
+              <li
+                key={`${row.building}-${row.room_number}-${i}`}
+                className="rounded-2xl border border-emerald-500/30 bg-black/25 px-4 py-3"
+              >
+                <p className="flex items-center gap-2 text-sm font-semibold text-emerald-50">
+                  <CheckCircle2Icon className="size-4 shrink-0 text-emerald-400" aria-hidden />
+                  {row.building} · {row.room_number}
+                </p>
+                <p className="mt-1 text-xs text-emerald-100/80">{row.department}</p>
+                <p className="mt-1 text-xs text-emerald-100/65">
+                  {row.firstname} {row.lastname} · {row.netid} · {row.job_title}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          <button
+            type="button"
+            className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-2xl bg-emerald-600 text-sm font-semibold text-white touch-manipulation hover:bg-emerald-500"
+            onClick={() => setSubmittedRows(null)}
+          >
+            Submit more rooms
+          </button>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-lg flex-col gap-5 px-4 pb-8 pt-6 max-[361px]:px-3">
@@ -197,36 +197,16 @@ export function RoomCollectionForm() {
         </p>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Room information</h1>
         <p className="text-sm leading-relaxed text-muted-foreground">
-          Enter your details once, then add each room. No sign-in required — submit when your list is
-          ready.
+          Enter your details once, then add each room and submit when your list is ready.
         </p>
       </header>
-
-      {lookupError ? (
-        <section
-          role="alert"
-          className="rounded-2xl border border-amber-500/40 bg-amber-950/45 px-4 py-3.5 text-sm text-amber-50"
-        >
-          {lookupError}
-        </section>
-      ) : null}
-
-      {submittedCount != null ? (
-        <section
-          role="status"
-          className="rounded-2xl border border-emerald-500/40 bg-emerald-950/40 px-4 py-3.5 text-sm text-emerald-50"
-        >
-          Submitted {submittedCount} room{submittedCount === 1 ? "" : "s"}. You can add more below if
-          needed.
-        </section>
-      ) : null}
 
       <section className="rounded-2xl border border-border bg-card/80 p-4 shadow-md shadow-black/20">
         <h2 className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">
           Your details
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Stays the same while you add multiple rooms.
+          Kept while you add rooms. Cleared after submit.
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div>
@@ -235,10 +215,9 @@ export function RoomCollectionForm() {
             </label>
             <input
               id="room-firstname"
-              autoComplete="given-name"
               className={fieldClass}
-              value={person.firstname}
-              onChange={(e) => setPersonField("firstname", e.target.value)}
+              value={firstname}
+              onChange={(e) => setFirstname(e.target.value)}
             />
           </div>
           <div>
@@ -247,10 +226,9 @@ export function RoomCollectionForm() {
             </label>
             <input
               id="room-lastname"
-              autoComplete="family-name"
               className={fieldClass}
-              value={person.lastname}
-              onChange={(e) => setPersonField("lastname", e.target.value)}
+              value={lastname}
+              onChange={(e) => setLastname(e.target.value)}
             />
           </div>
           <div>
@@ -259,10 +237,9 @@ export function RoomCollectionForm() {
             </label>
             <input
               id="room-netid"
-              autoComplete="username"
               className={fieldClass}
-              value={person.netid}
-              onChange={(e) => setPersonField("netid", e.target.value)}
+              value={netid}
+              onChange={(e) => setNetid(e.target.value)}
             />
           </div>
           <div>
@@ -271,10 +248,9 @@ export function RoomCollectionForm() {
             </label>
             <input
               id="room-job"
-              autoComplete="organization-title"
               className={fieldClass}
-              value={person.job_title}
-              onChange={(e) => setPersonField("job_title", e.target.value)}
+              value={jobTitle}
+              onChange={(e) => setJobTitle(e.target.value)}
             />
           </div>
         </div>
@@ -286,57 +262,43 @@ export function RoomCollectionForm() {
         </h2>
         <div className="mt-4 grid gap-3">
           <div>
-            <label htmlFor="room-department" className={labelClass}>
+            <label htmlFor={`room-department-${pickerEpoch}`} className={labelClass}>
               Department
             </label>
             <select
-              id="room-department"
-              disabled={lookupsLoading || departments.length === 0}
-              className={cn(fieldClass, "appearance-none pr-10")}
-              value={department}
-              onChange={(e) => {
-                setDepartment(e.target.value);
-                setSubmittedCount(null);
-              }}
+              key={`department-${pickerEpoch}`}
+              id={`room-department-${pickerEpoch}`}
+              ref={departmentRef}
+              className={`${fieldClass} appearance-none pr-10`}
+              defaultValue=""
             >
-              <option value="">
-                {lookupsLoading
-                  ? "Loading…"
-                  : departments.length === 0
-                    ? "No departments configured"
-                    : "Select department"}
+              <option value="" disabled>
+                Select department
               </option>
-              {departments.map((d) => (
-                <option key={d.name} value={d.name}>
-                  {d.name}
+              {DEPARTMENTS.map((name) => (
+                <option key={name} value={name}>
+                  {name}
                 </option>
               ))}
             </select>
           </div>
           <div>
-            <label htmlFor="room-building" className={labelClass}>
+            <label htmlFor={`room-building-${pickerEpoch}`} className={labelClass}>
               Building
             </label>
             <select
-              id="room-building"
-              disabled={lookupsLoading || buildings.length === 0}
-              className={cn(fieldClass, "appearance-none pr-10")}
-              value={building}
-              onChange={(e) => {
-                setBuilding(e.target.value);
-                setSubmittedCount(null);
-              }}
+              key={`building-${pickerEpoch}`}
+              id={`room-building-${pickerEpoch}`}
+              ref={buildingRef}
+              className={`${fieldClass} appearance-none pr-10`}
+              defaultValue=""
             >
-              <option value="">
-                {lookupsLoading
-                  ? "Loading…"
-                  : buildings.length === 0
-                    ? "No buildings configured"
-                    : "Select building"}
+              <option value="" disabled>
+                Select building
               </option>
-              {buildings.map((b) => (
-                <option key={b.name} value={b.name}>
-                  {b.name}
+              {BUILDINGS.map((name) => (
+                <option key={name} value={name}>
+                  {name}
                 </option>
               ))}
             </select>
@@ -349,10 +311,7 @@ export function RoomCollectionForm() {
               id="room-number"
               className={fieldClass}
               value={roomNumber}
-              onChange={(e) => {
-                setRoomNumber(e.target.value);
-                setSubmittedCount(null);
-              }}
+              onChange={(e) => setRoomNumber(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -363,22 +322,20 @@ export function RoomCollectionForm() {
           </div>
         </div>
 
-        <Button
+        <button
           type="button"
-          size="lg"
-          className="mt-4 h-12 w-full gap-2 rounded-2xl touch-manipulation"
+          className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-semibold text-primary-foreground touch-manipulation disabled:opacity-50"
           onClick={handleAddRoom}
-          disabled={lookupsLoading || !!lookupError}
         >
           <PlusIcon className="size-4 shrink-0" aria-hidden />
           Add room to list
-        </Button>
+        </button>
       </section>
 
       {formError ? (
         <section
           role="alert"
-          className="rounded-2xl border border-red-500/40 bg-red-950/50 px-4 py-3.5 text-sm text-red-100"
+          className="rounded-2xl border border-red-500/50 bg-red-950/60 px-4 py-3.5 text-sm font-medium text-red-50"
         >
           {formError}
         </section>
@@ -397,16 +354,20 @@ export function RoomCollectionForm() {
             </p>
           </div>
           {draft.length > 0 ? (
-            <Button
+            <button
               type="button"
-              variant="outline"
-              size="sm"
-              className="h-10 gap-1.5 rounded-xl touch-manipulation"
-              onClick={handleDownloadDraft}
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-border px-3 text-xs font-semibold touch-manipulation"
+              onClick={() => {
+                const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+                downloadRoomAssignmentsSpreadsheet(
+                  draft.map(draftRowToInsert),
+                  `room-assignments-${stamp}.xlsx`
+                );
+              }}
             >
               <DownloadIcon className="size-3.5 shrink-0" aria-hidden />
               Download list
-            </Button>
+            </button>
           ) : null}
         </div>
 
@@ -428,9 +389,9 @@ export function RoomCollectionForm() {
                 </div>
                 <button
                   type="button"
-                  className="flex size-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground touch-manipulation"
-                  aria-label={`Remove room ${row.room_number}`}
-                  onClick={() => removeRow(row.localId)}
+                  className="flex size-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted touch-manipulation"
+                  aria-label={`Remove ${row.room_number}`}
+                  onClick={() => setDraft((rows) => rows.filter((r) => r.localId !== row.localId))}
                 >
                   <Trash2Icon className="size-4" aria-hidden />
                 </button>
@@ -439,16 +400,15 @@ export function RoomCollectionForm() {
           </ul>
         ) : null}
 
-        <Button
+        <button
           type="button"
-          size="lg"
-          className="mt-4 h-12 w-full gap-2 rounded-2xl bg-emerald-600 text-white hover:bg-emerald-500 touch-manipulation"
+          className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 text-sm font-semibold text-white touch-manipulation hover:bg-emerald-500 disabled:opacity-50"
           disabled={draft.length === 0 || submitting}
           onClick={() => void handleSubmit()}
         >
           {submitting ? (
             <>
-              <Loader2Icon className="size-4 shrink-0 animate-spin" aria-hidden />
+              <Loader2Icon className="size-4 animate-spin" aria-hidden />
               Submitting…
             </>
           ) : (
@@ -457,7 +417,7 @@ export function RoomCollectionForm() {
               Submit {draft.length > 0 ? `${draft.length} room${draft.length === 1 ? "" : "s"}` : "rooms"}
             </>
           )}
-        </Button>
+        </button>
       </section>
     </div>
   );

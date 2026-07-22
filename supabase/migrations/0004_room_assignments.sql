@@ -39,21 +39,22 @@ create index if not exists room_assignments_created_at_idx
 create index if not exists room_assignments_netid_idx
   on public.room_assignments (netid);
 
--- Seed placeholders — replace / add your real departments & buildings
+-- Seed ECS departments & buildings (form dropdowns)
 insert into public.room_departments (name, sort_order)
 values
-  ('IT Operations', 10),
-  ('Facilities', 20),
-  ('Academic Affairs', 30),
-  ('Student Services', 40)
+  ('Bioengineering', 10),
+  ('Computer Science', 20),
+  ('Electrical Engineering', 30),
+  ('Materials Science and Engineering', 40),
+  ('Mechanical Engineering', 50),
+  ('Systems Engineering', 60)
 on conflict (name) do nothing;
 
 insert into public.room_buildings (name, sort_order)
 values
-  ('Main Building', 10),
-  ('North Annex', 20),
-  ('Science Hall', 30),
-  ('Admin Wing', 40)
+  ('ECSW', 10),
+  ('ECSN', 20),
+  ('ECSS', 30)
 on conflict (name) do nothing;
 
 -- ---------------------------------------------------------------------------
