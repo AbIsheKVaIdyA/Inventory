@@ -3,7 +3,6 @@
 import {
   ArrowLeftIcon,
   CheckCheckIcon,
-  ChevronRightIcon,
   DoorOpenIcon,
   Loader2Icon,
   PackagePlus,
@@ -1113,8 +1112,8 @@ export function AssetTable({
             >
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">
                 {locationFilterActive
-                  ? "Pending at filtered location"
-                  : "Left to scan (everywhere)"}
+                  ? "Left in this room"
+                  : "Left to scan (all rooms)"}
               </p>
               <p className="mt-2 text-5xl font-bold tabular-nums leading-none text-foreground sm:text-6xl">
                 {locationFilterActive ? filteredPendingCount : counts.pending}
@@ -1122,18 +1121,14 @@ export function AssetTable({
               <p className="mt-3 text-sm text-muted-foreground">
                 {locationFilterActive ? (
                   <>
-                    Showing only rows whose Location matches your filter.&nbsp;
-                    <span className="font-semibold text-foreground">
-                      {counts.pending}
-                    </span>{" "}
-                    pending worldwide — drops as anyone scans anywhere.
+                    Devices still pending in{" "}
+                    <span className="font-semibold text-foreground">{selectedLocationLabel}</span>.
+                    Tap <span className="font-semibold text-foreground">In file</span> or ✕ on the
+                    room card to go home.
                   </>
                 ) : (
                   <>
-                    Drops by 1 whenever someone taps Scanned — same tally for the whole team in real
-                    time.&nbsp;
-                    Pick a site in the filter below to load that queue here, or use Look up to jump to
-                    a row.
+                    Pick a room below to open its list. Use Look up if you only need one device.
                   </>
                 )}
               </p>
@@ -1215,12 +1210,12 @@ export function AssetTable({
                       id="queue-extras-heading"
                       className="text-sm font-semibold leading-tight text-cyan-50"
                     >
-                      Need something else?
+                      Quick actions
                     </h2>
                     <p className="mt-0.5 text-[0.7rem] leading-snug text-cyan-200/80">
-                      Look up a row, add missing hardware, or create a room and put devices in it.
+                      Find one device, add missing hardware, or set up a new room.
                     </p>
-                    <div className="mt-2.5 grid grid-cols-3 gap-1.5 sm:gap-2">
+                    <div className="mt-3 flex flex-col gap-2 sm:grid sm:grid-cols-3 sm:gap-2">
                       <Button
                         type="button"
                         disabled={discoveredSaving || findLookupBusy || roomBusy}
@@ -1231,14 +1226,14 @@ export function AssetTable({
                         }}
                         variant="outline"
                         size="sm"
-                        className="h-auto min-h-11 touch-manipulation flex-col items-stretch justify-center gap-0.5 rounded-xl border-teal-400/45 bg-teal-950/35 px-1.5 py-2 text-center text-[0.7rem] font-semibold text-teal-50 shadow-sm hover:bg-teal-950/55 sm:min-h-12 sm:px-2 sm:text-xs"
+                        className="h-auto min-h-12 touch-manipulation flex-row items-center justify-start gap-3 rounded-xl border-teal-400/45 bg-teal-950/35 px-3 py-3 text-left text-sm font-semibold text-teal-50 shadow-sm hover:bg-teal-950/55 sm:flex-col sm:items-stretch sm:justify-center sm:gap-0.5 sm:px-2 sm:py-2.5 sm:text-center sm:text-xs"
                       >
-                        <span className="flex items-center justify-center gap-1">
-                          <SearchIcon className="size-3.5 shrink-0 opacity-90" aria-hidden />
-                          Look up
-                        </span>
-                        <span className="block font-normal text-[0.58rem] leading-tight text-teal-200/85">
-                          Find a row
+                        <SearchIcon className="size-5 shrink-0 opacity-90 sm:mx-auto sm:size-4" aria-hidden />
+                        <span className="min-w-0 flex-1 sm:flex-none">
+                          <span className="block">Look up</span>
+                          <span className="block text-[0.7rem] font-normal text-teal-200/85 sm:text-[0.58rem]">
+                            Tag, serial, asset ID
+                          </span>
                         </span>
                       </Button>
                       <Button
@@ -1252,21 +1247,21 @@ export function AssetTable({
                           setDiscoveredDialogOpen(true);
                         }}
                         size="sm"
-                        className="h-auto min-h-11 touch-manipulation flex-col items-stretch justify-center gap-0.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 px-1.5 py-2 text-center text-[0.7rem] font-semibold text-white shadow-md shadow-teal-950/40 ring-1 ring-white/10 hover:from-cyan-500 hover:to-teal-500 sm:min-h-12 sm:px-2 sm:text-xs"
+                        className="h-auto min-h-12 touch-manipulation flex-row items-center justify-start gap-3 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 px-3 py-3 text-left text-sm font-semibold text-white shadow-md shadow-teal-950/40 ring-1 ring-white/10 hover:from-cyan-500 hover:to-teal-500 sm:flex-col sm:items-stretch sm:justify-center sm:gap-0.5 sm:px-2 sm:py-2.5 sm:text-center sm:text-xs"
                       >
                         {discoveredSaving ? (
-                          <span className="flex items-center justify-center gap-1">
-                            <Loader2Icon className="size-3.5 shrink-0 animate-spin" aria-hidden />
+                          <span className="flex items-center gap-2">
+                            <Loader2Icon className="size-5 animate-spin sm:size-4" aria-hidden />
                             Saving…
                           </span>
                         ) : (
                           <>
-                            <span className="flex items-center justify-center gap-0.5">
-                              Add new
-                              <ChevronRightIcon className="size-3 shrink-0 opacity-90" aria-hidden />
-                            </span>
-                            <span className="block font-normal text-[0.58rem] leading-tight text-white/85">
-                              + tag number
+                            <PackagePlus className="size-5 shrink-0 opacity-95 sm:mx-auto sm:size-4" aria-hidden />
+                            <span className="min-w-0 flex-1 sm:flex-none">
+                              <span className="block">Add new</span>
+                              <span className="block text-[0.7rem] font-normal text-white/85 sm:text-[0.58rem]">
+                                Not on the import
+                              </span>
                             </span>
                           </>
                         )}
@@ -1281,14 +1276,14 @@ export function AssetTable({
                         }}
                         variant="outline"
                         size="sm"
-                        className="h-auto min-h-11 touch-manipulation flex-col items-stretch justify-center gap-0.5 rounded-xl border-violet-400/45 bg-violet-950/40 px-1.5 py-2 text-center text-[0.7rem] font-semibold text-violet-50 shadow-sm hover:bg-violet-950/60 sm:min-h-12 sm:px-2 sm:text-xs"
+                        className="h-auto min-h-12 touch-manipulation flex-row items-center justify-start gap-3 rounded-xl border-violet-400/45 bg-violet-950/40 px-3 py-3 text-left text-sm font-semibold text-violet-50 shadow-sm hover:bg-violet-950/60 sm:flex-col sm:items-stretch sm:justify-center sm:gap-0.5 sm:px-2 sm:py-2.5 sm:text-center sm:text-xs"
                       >
-                        <span className="flex items-center justify-center gap-1">
-                          <DoorOpenIcon className="size-3.5 shrink-0 opacity-90" aria-hidden />
-                          Room
-                        </span>
-                        <span className="block font-normal text-[0.58rem] leading-tight text-violet-200/85">
-                          Create / move
+                        <DoorOpenIcon className="size-5 shrink-0 opacity-90 sm:mx-auto sm:size-4" aria-hidden />
+                        <span className="min-w-0 flex-1 sm:flex-none">
+                          <span className="block">Room</span>
+                          <span className="block text-[0.7rem] font-normal text-violet-200/85 sm:text-[0.58rem]">
+                            Create or move devices
+                          </span>
                         </span>
                       </Button>
                     </div>

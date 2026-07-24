@@ -185,20 +185,6 @@ function AddDiscoveredSystemForm({
             Identity
           </legend>
           <label className="flex flex-col gap-1.5">
-            <span className={labelClass}>Serial / service tag</span>
-            <input
-              type="text"
-              enterKeyHint="next"
-              autoComplete="off"
-              disabled={busy}
-              value={serialId}
-              onChange={(e) => setSerialId(e.target.value)}
-              className={fieldClass}
-              placeholder="Sticker serial or service tag"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1.5">
             <span className={labelClass}>Tag number</span>
             <input
               type="text"
@@ -209,6 +195,20 @@ function AddDiscoveredSystemForm({
               onChange={(e) => setTagNumber(e.target.value)}
               className={fieldClass}
               placeholder="Asset / tag number if present"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClass}>Serial / service tag</span>
+            <input
+              type="text"
+              enterKeyHint="next"
+              autoComplete="off"
+              disabled={busy}
+              value={serialId}
+              onChange={(e) => setSerialId(e.target.value)}
+              className={fieldClass}
+              placeholder="Sticker serial or service tag"
             />
           </label>
         </fieldset>
