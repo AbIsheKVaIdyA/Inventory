@@ -4,6 +4,7 @@ import {
   ArrowLeftIcon,
   CheckCheckIcon,
   ChevronRightIcon,
+  DoorOpenIcon,
   Loader2Icon,
   PackagePlus,
   RefreshCwIcon,
@@ -43,6 +44,7 @@ import {
   AddDiscoveredSystemDialog,
   type DiscoveredSystemPayload,
 } from "@/components/AddDiscoveredSystemDialog";
+import { CreateAssignRoomDialog } from "@/components/CreateAssignRoomDialog";
 import { DownloadButton } from "@/components/DownloadButton";
 import { FinishLocationAlert } from "@/components/FinishLocationAlert";
 import { Header } from "@/components/Header";
@@ -71,7 +73,13 @@ export function AssetTable({
   const [discoveredDialogOpen, setDiscoveredDialogOpen] = useState(false);
   const [discoveredFormKey, setDiscoveredFormKey] = useState(0);
   const [discoveredPrefillSerial, setDiscoveredPrefillSerial] = useState<string | null>(null);
+  const [discoveredLocationOverride, setDiscoveredLocationOverride] = useState<string | null>(
+    null
+  );
   const [discoveredSaving, setDiscoveredSaving] = useState(false);
+  const [roomDialogOpen, setRoomDialogOpen] = useState(false);
+  const [roomFormKey, setRoomFormKey] = useState(0);
+  const [roomBusy, setRoomBusy] = useState(false);
   const [findDialogOpen, setFindDialogOpen] = useState(false);
   const [findDialogMountKey, setFindDialogMountKey] = useState(0);
   const [findLookupBusy, setFindLookupBusy] = useState(false);
@@ -124,10 +132,11 @@ export function AssetTable({
   );
 
   const preferredLocationForDiscovered = useMemo(() => {
+    if (discoveredLocationOverride !== null) return discoveredLocationOverride;
     if (locationFilter === LOCATION_FILTER_ALL) return null;
     if (locationFilter === LOCATION_FILTER_UNSET) return "";
     return locationFilter;
-  }, [locationFilter]);
+  }, [discoveredLocationOverride, locationFilter]);
 
   const filteredPendingAssets = useMemo(
     () =>
@@ -465,11 +474,11 @@ export function AssetTable({
       const userNow = userRef.current;
       if (!userNow) return;
 
-      const serial_id = payload.serial_id.trim();
-      if (!serial_id) return;
+      const serial_id = payload.serial_id.trim() || null;
       const locationNorm = payload.location.trim() || null;
       const manufacturerNorm = payload.manufacturer.trim() || null;
       const modelNorm = payload.model.trim() || null;
+      const tagNorm = payload.tag_number.trim() || null;
       const nowIso = new Date().toISOString();
 
       setMutationError(null);
@@ -479,6 +488,7 @@ export function AssetTable({
         const sb = getSupabaseBrowserClient();
         const insertRow = {
           serial_id,
+          tag_number: tagNorm,
           location: locationNorm,
           manufacturer: manufacturerNorm,
           model: modelNorm,
@@ -506,6 +516,7 @@ export function AssetTable({
         });
         setDiscoveredDialogOpen(false);
         setDiscoveredPrefillSerial(null);
+        setDiscoveredLocationOverride(null);
       } catch (e) {
         const msg =
           e instanceof Error ? e.message : "Could not add row — try again.";
@@ -515,6 +526,55 @@ export function AssetTable({
       }
     },
     []
+  );
+
+  const handleMoveDevicesToRoom = useCallback(
+    async (location: string, deviceIds: string[]) => {
+      const loc = location.trim();
+      if (!loc || deviceIds.length === 0) return;
+
+      setMutationError(null);
+      setRoomBusy(true);
+      const prevById = new Map(
+        inventoryRows.filter((r) => deviceIds.includes(r.id)).map((r) => [r.id, { ...r }])
+      );
+
+      setInventoryRows((curr) =>
+        sortInventoryRows(
+          curr.map((r) => (deviceIds.includes(r.id) ? { ...r, location: loc } : r))
+        )
+      );
+
+      try {
+        const sb = getSupabaseBrowserClient();
+        const { error } = await sb
+          .from("inventory_items")
+          .update({ location: loc })
+          .in("id", deviceIds);
+        if (error) throw error;
+
+        setRoomDialogOpen(false);
+        setLocationFilter(loc);
+        setToastTitle("Room assigned");
+        setToastMessage(
+          `Moved ${deviceIds.length} device${deviceIds.length === 1 ? "" : "s"} to ${loc}.`
+        );
+        setToastOpen(true);
+        queueMicrotask(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+      } catch (e) {
+        setInventoryRows((curr) =>
+          sortInventoryRows(
+            curr.map((r) => (prevById.has(r.id) ? prevById.get(r.id)! : r))
+          )
+        );
+        const msg =
+          e instanceof Error ? e.message : "Could not update locations — try again.";
+        setMutationError(msg);
+      } finally {
+        setRoomBusy(false);
+      }
+    },
+    [inventoryRows]
   );
 
   const handleLookupConfirm = useCallback(async (rowId: string, locationResolved: string) => {
@@ -878,6 +938,7 @@ export function AssetTable({
         onConfirmMatch={(id, loc) => void handleLookupConfirm(id, loc)}
         onRequestManualAdd={(prefill) => {
           setDiscoveredPrefillSerial(prefill.length > 0 ? prefill : null);
+          setDiscoveredLocationOverride(null);
           setDiscoveredFormKey((k) => k + 1);
           setDiscoveredDialogOpen(true);
         }}
@@ -891,9 +952,33 @@ export function AssetTable({
         initialSerial={discoveredPrefillSerial}
         onDismiss={() => {
           setDiscoveredPrefillSerial(null);
+          setDiscoveredLocationOverride(null);
           setDiscoveredDialogOpen(false);
         }}
         onSave={(p) => void handleInsertDiscoveredSystem(p)}
+      />
+      <CreateAssignRoomDialog
+        open={roomDialogOpen}
+        busy={roomBusy}
+        formMountKey={roomFormKey}
+        inventoryRows={inventoryRows}
+        onDismiss={() => setRoomDialogOpen(false)}
+        onMoveDevices={(loc, ids) => void handleMoveDevicesToRoom(loc, ids)}
+        onAddNewInRoom={(loc) => {
+          setRoomDialogOpen(false);
+          setDiscoveredPrefillSerial(null);
+          setDiscoveredLocationOverride(loc);
+          setDiscoveredFormKey((k) => k + 1);
+          setDiscoveredDialogOpen(true);
+        }}
+        onUseRoomOnly={(loc) => {
+          setRoomDialogOpen(false);
+          setLocationFilter(loc);
+          setToastTitle("Room ready");
+          setToastMessage(`Filter set to ${loc}. Add or scan devices there.`);
+          setToastOpen(true);
+          queueMicrotask(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+        }}
       />
       <Header
         currentDisplayName={scannerDisplayName}
@@ -1110,7 +1195,8 @@ export function AssetTable({
                 aria-labelledby="queue-extras-heading"
                 className={cn(
                   "rounded-2xl border border-dashed border-cyan-400/45 bg-gradient-to-br from-cyan-950/80 via-teal-950/45 to-slate-950/40 p-3 shadow-lg shadow-cyan-950/35 ring-1 ring-cyan-400/15 backdrop-blur-sm sm:p-3.5",
-                  (discoveredSaving || findLookupBusy) && "pointer-events-none opacity-70"
+                  (discoveredSaving || findLookupBusy || roomBusy) &&
+                    "pointer-events-none opacity-70"
                 )}
               >
                 <div className="flex items-start gap-2.5">
@@ -1118,7 +1204,7 @@ export function AssetTable({
                     className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-100 ring-1 ring-cyan-400/40"
                     aria-hidden
                   >
-                    {discoveredSaving || findLookupBusy ? (
+                    {discoveredSaving || findLookupBusy || roomBusy ? (
                       <Loader2Icon className="size-4 animate-spin" />
                     ) : (
                       <PackagePlus className="size-4 opacity-95" />
@@ -1129,65 +1215,81 @@ export function AssetTable({
                       id="queue-extras-heading"
                       className="text-sm font-semibold leading-tight text-cyan-50"
                     >
-                      Not on the worksheet?
+                      Need something else?
                     </h2>
                     <p className="mt-0.5 text-[0.7rem] leading-snug text-cyan-200/80">
-                      Look up an existing row, or add hardware missing from the import.
+                      Look up a row, add missing hardware, or create a room and put devices in it.
                     </p>
-                    <p id="manual-add-option-heading" className="sr-only">
-                      Optional: find equipment on the worksheet or add a new row
-                    </p>
-                    <div className="mt-2.5 grid grid-cols-2 gap-2">
+                    <div className="mt-2.5 grid grid-cols-3 gap-1.5 sm:gap-2">
                       <Button
                         type="button"
-                        disabled={discoveredSaving || findLookupBusy}
+                        disabled={discoveredSaving || findLookupBusy || roomBusy}
                         aria-busy={findLookupBusy}
-                        aria-describedby="manual-add-option-heading"
                         onClick={() => {
                           setFindDialogMountKey((k) => k + 1);
                           setFindDialogOpen(true);
                         }}
                         variant="outline"
                         size="sm"
-                        className="h-auto min-h-11 touch-manipulation flex-col items-stretch justify-center gap-0.5 rounded-xl border-teal-400/45 bg-teal-950/35 px-2 py-2.5 text-center text-xs font-semibold text-teal-50 shadow-sm hover:bg-teal-950/55 sm:min-h-12 sm:text-sm"
+                        className="h-auto min-h-11 touch-manipulation flex-col items-stretch justify-center gap-0.5 rounded-xl border-teal-400/45 bg-teal-950/35 px-1.5 py-2 text-center text-[0.7rem] font-semibold text-teal-50 shadow-sm hover:bg-teal-950/55 sm:min-h-12 sm:px-2 sm:text-xs"
                       >
-                        <span className="flex items-center justify-center gap-1.5">
-                          <SearchIcon className="size-4 shrink-0 opacity-90" aria-hidden />
+                        <span className="flex items-center justify-center gap-1">
+                          <SearchIcon className="size-3.5 shrink-0 opacity-90" aria-hidden />
                           Look up
                         </span>
-                        <span className="block font-normal text-[0.62rem] leading-tight text-teal-200/85">
-                          Serial, asset ID, model…
+                        <span className="block font-normal text-[0.58rem] leading-tight text-teal-200/85">
+                          Find a row
                         </span>
                       </Button>
                       <Button
                         type="button"
-                        disabled={discoveredSaving || findLookupBusy}
+                        disabled={discoveredSaving || findLookupBusy || roomBusy}
                         aria-busy={discoveredSaving}
-                        aria-describedby="manual-add-option-heading"
                         onClick={() => {
                           setDiscoveredPrefillSerial(null);
+                          setDiscoveredLocationOverride(null);
                           setDiscoveredFormKey((k) => k + 1);
                           setDiscoveredDialogOpen(true);
                         }}
                         size="sm"
-                        className="h-auto min-h-11 touch-manipulation flex-col items-stretch justify-center gap-0.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 px-2 py-2.5 text-center text-xs font-semibold text-white shadow-md shadow-teal-950/40 ring-1 ring-white/10 hover:from-cyan-500 hover:to-teal-500 sm:min-h-12 sm:text-sm"
+                        className="h-auto min-h-11 touch-manipulation flex-col items-stretch justify-center gap-0.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 px-1.5 py-2 text-center text-[0.7rem] font-semibold text-white shadow-md shadow-teal-950/40 ring-1 ring-white/10 hover:from-cyan-500 hover:to-teal-500 sm:min-h-12 sm:px-2 sm:text-xs"
                       >
                         {discoveredSaving ? (
-                          <span className="flex items-center justify-center gap-1.5">
-                            <Loader2Icon className="size-4 shrink-0 animate-spin" aria-hidden />
+                          <span className="flex items-center justify-center gap-1">
+                            <Loader2Icon className="size-3.5 shrink-0 animate-spin" aria-hidden />
                             Saving…
                           </span>
                         ) : (
                           <>
-                            <span className="flex items-center justify-center gap-1">
+                            <span className="flex items-center justify-center gap-0.5">
                               Add new
-                              <ChevronRightIcon className="size-3.5 shrink-0 opacity-90" aria-hidden />
+                              <ChevronRightIcon className="size-3 shrink-0 opacity-90" aria-hidden />
                             </span>
-                            <span className="block font-normal text-[0.62rem] leading-tight text-white/85">
-                              Not on import
+                            <span className="block font-normal text-[0.58rem] leading-tight text-white/85">
+                              + tag number
                             </span>
                           </>
                         )}
+                      </Button>
+                      <Button
+                        type="button"
+                        disabled={discoveredSaving || findLookupBusy || roomBusy}
+                        aria-busy={roomBusy}
+                        onClick={() => {
+                          setRoomFormKey((k) => k + 1);
+                          setRoomDialogOpen(true);
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="h-auto min-h-11 touch-manipulation flex-col items-stretch justify-center gap-0.5 rounded-xl border-violet-400/45 bg-violet-950/40 px-1.5 py-2 text-center text-[0.7rem] font-semibold text-violet-50 shadow-sm hover:bg-violet-950/60 sm:min-h-12 sm:px-2 sm:text-xs"
+                      >
+                        <span className="flex items-center justify-center gap-1">
+                          <DoorOpenIcon className="size-3.5 shrink-0 opacity-90" aria-hidden />
+                          Room
+                        </span>
+                        <span className="block font-normal text-[0.58rem] leading-tight text-violet-200/85">
+                          Create / move
+                        </span>
                       </Button>
                     </div>
                   </div>

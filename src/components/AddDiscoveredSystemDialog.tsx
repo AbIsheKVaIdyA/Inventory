@@ -13,8 +13,14 @@ import type { LocationPickerOption } from "@/lib/location-filter";
 const SEL_PICK = "__pick__";
 const SEL_OTHER = "__other__";
 
+const fieldClass =
+  "min-h-[3rem] w-full rounded-2xl border border-border bg-background/80 px-4 text-base outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+
+const labelClass = "text-xs font-semibold uppercase tracking-wide text-muted-foreground";
+
 export type DiscoveredSystemPayload = {
   serial_id: string;
+  tag_number: string;
   /** Resolved location string; empty means store as null in DB */
   location: string;
   manufacturer: string;
@@ -40,6 +46,10 @@ function deriveInitialSelect(
   opts: LocationPickerOption[]
 ): { select: string; custom: string } {
   if (preferred === null) return { select: SEL_PICK, custom: "" };
+  if (preferred === "") {
+    const empty = opts.find((o) => o.value === "");
+    if (empty) return { select: "", custom: "" };
+  }
   if (opts.some((o) => o.value === preferred)) return { select: preferred, custom: "" };
   return { select: SEL_OTHER, custom: preferred };
 }
@@ -67,6 +77,7 @@ function AddDiscoveredSystemForm({
   const [locationSelect, setLocationSelect] = useState(initial.select);
   const [locationCustom, setLocationCustom] = useState(initial.custom);
   const [serialId, setSerialId] = useState(() => (initialSerial?.trim() ? initialSerial.trim() : ""));
+  const [tagNumber, setTagNumber] = useState("");
   const [manufacturer, setManufacturer] = useState("");
   const [model, setModel] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -90,14 +101,11 @@ function AddDiscoveredSystemForm({
     }
 
     const sid = trimOrEmpty(serialId);
-    if (!sid) {
-      setFormError("Enter a serial / service tag (or the code on the sticker).");
-      return;
-    }
 
     setFormError(null);
     onSave({
       serial_id: sid,
+      tag_number: trimOrEmpty(tagNumber),
       location: resolvedLocation,
       manufacturer: trimOrEmpty(manufacturer),
       model: trimOrEmpty(model),
@@ -110,14 +118,13 @@ function AddDiscoveredSystemForm({
         <PackagePlus className="size-6" aria-hidden />
       </div>
       <AlertDialog.Title className="text-center text-lg font-semibold tracking-tight text-foreground">
-        Add equipment not on the worksheet
+        Add new device
       </AlertDialog.Title>
       <AlertDialog.Description className="mt-2 text-center text-sm leading-relaxed text-muted-foreground">
-        Use when you find hardware that is not on the import list. This creates a new worksheet row,
-        sets the location you choose, and records serial / brand / model. It is saved as scanned.
+        Hardware missing from the import. Saved as scanned at the location you pick.
       </AlertDialog.Description>
 
-      <form className="mt-5 flex flex-col gap-3" onSubmit={(e) => void submit(e)}>
+      <form className="mt-5 flex flex-col gap-4" onSubmit={(e) => void submit(e)}>
         {formError ? (
           <p
             role="alert"
@@ -127,97 +134,119 @@ function AddDiscoveredSystemForm({
           </p>
         ) : null}
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Location <span className="text-red-300">*</span>
-          </span>
-          <select
-            value={locationSelect}
-            disabled={busy}
-            onChange={(e) => setLocationSelect(e.target.value)}
-            className="min-h-[3rem] w-full rounded-2xl border border-border bg-background/80 px-4 text-base outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value={SEL_PICK}>Select location…</option>
-            {locationOptions.map((o) => (
-              <option
-                key={o.value === "" ? "__loc_empty__" : o.value}
-                value={o.value}
-              >
-                {o.label}
-              </option>
-            ))}
-            <option value={SEL_OTHER}>Other location…</option>
-          </select>
-        </label>
-
-        {locationSelect === SEL_OTHER ? (
+        <fieldset className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-muted/20 p-3">
+          <legend className="px-1 text-[0.65rem] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+            Where
+          </legend>
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Type location <span className="text-red-300">*</span>
+            <span className={labelClass}>
+              Location <span className="text-red-300">*</span>
             </span>
+            <select
+              value={locationSelect}
+              disabled={busy}
+              onChange={(e) => setLocationSelect(e.target.value)}
+              className={fieldClass}
+            >
+              <option value={SEL_PICK}>Select location…</option>
+              {locationOptions.map((o) => (
+                <option
+                  key={o.value === "" ? "__loc_empty__" : o.value}
+                  value={o.value}
+                >
+                  {o.label}
+                </option>
+              ))}
+              <option value={SEL_OTHER}>Other location…</option>
+            </select>
+          </label>
+
+          {locationSelect === SEL_OTHER ? (
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>
+                Type location <span className="text-red-300">*</span>
+              </span>
+              <input
+                type="text"
+                enterKeyHint="next"
+                autoComplete="off"
+                disabled={busy}
+                value={locationCustom}
+                onChange={(e) => setLocationCustom(e.target.value)}
+                className={fieldClass}
+                placeholder="e.g. ECSS 3.502"
+              />
+            </label>
+          ) : null}
+        </fieldset>
+
+        <fieldset className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-muted/20 p-3">
+          <legend className="px-1 text-[0.65rem] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+            Identity
+          </legend>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClass}>Serial / service tag</span>
             <input
               type="text"
               enterKeyHint="next"
               autoComplete="off"
               disabled={busy}
-              value={locationCustom}
-              onChange={(e) => setLocationCustom(e.target.value)}
-              className="min-h-[3rem] w-full rounded-2xl border border-border bg-background/80 px-4 text-base outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
-              placeholder="Room, site, or area"
+              value={serialId}
+              onChange={(e) => setSerialId(e.target.value)}
+              className={fieldClass}
+              placeholder="Sticker serial or service tag"
             />
           </label>
-        ) : null}
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Serial / service tag <span className="text-red-300">*</span>
-          </span>
-          <input
-            type="text"
-            enterKeyHint="next"
-            autoComplete="off"
-            required
-            disabled={busy}
-            value={serialId}
-            onChange={(e) => setSerialId(e.target.value)}
-            className="min-h-[3rem] w-full rounded-2xl border border-border bg-background/80 px-4 text-base outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
-            placeholder="Sticker code or serial"
-          />
-        </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClass}>Tag number</span>
+            <input
+              type="text"
+              enterKeyHint="next"
+              autoComplete="off"
+              disabled={busy}
+              value={tagNumber}
+              onChange={(e) => setTagNumber(e.target.value)}
+              className={fieldClass}
+              placeholder="Asset / tag number if present"
+            />
+          </label>
+        </fieldset>
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Brand (manufacturer)
-          </span>
-          <input
-            type="text"
-            enterKeyHint="next"
-            autoComplete="organization"
-            disabled={busy}
-            value={manufacturer}
-            onChange={(e) => setManufacturer(e.target.value)}
-            className="min-h-[3rem] w-full rounded-2xl border border-border bg-background/80 px-4 text-base outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
-            placeholder="e.g. Dell, HP, Lenovo"
-          />
-        </label>
+        <fieldset className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-muted/20 p-3">
+          <legend className="px-1 text-[0.65rem] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+            Details
+          </legend>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClass}>Brand (manufacturer)</span>
+            <input
+              type="text"
+              enterKeyHint="next"
+              autoComplete="organization"
+              disabled={busy}
+              value={manufacturer}
+              onChange={(e) => setManufacturer(e.target.value)}
+              className={fieldClass}
+              placeholder="e.g. Dell, HP, Lenovo"
+            />
+          </label>
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            System type (model)
-          </span>
-          <input
-            type="text"
-            enterKeyHint="done"
-            autoComplete="off"
-            disabled={busy}
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            className="min-h-[3rem] w-full rounded-2xl border border-border bg-background/80 px-4 text-base outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
-            placeholder="e.g. Latitude 5540"
-          />
-        </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClass}>System type (model)</span>
+            <input
+              type="text"
+              enterKeyHint="done"
+              autoComplete="off"
+              disabled={busy}
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className={fieldClass}
+              placeholder="e.g. Latitude 5540"
+            />
+          </label>
+        </fieldset>
 
-        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
+        <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
           <AlertDialog.Close
             type="button"
             disabled={busy}
@@ -287,7 +316,7 @@ export function AddDiscoveredSystemDialog({
           >
             {open ? (
               <AddDiscoveredSystemForm
-                key={`${formMountKey}-${initialSerial ?? ""}`}
+                key={`${formMountKey}-${initialSerial ?? ""}-${preferredLocation ?? ""}`}
                 busy={busy}
                 locationOptions={locationOptions}
                 preferredLocation={preferredLocation}
