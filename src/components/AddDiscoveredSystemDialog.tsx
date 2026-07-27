@@ -35,8 +35,8 @@ type AddDiscoveredSystemDialogProps = {
   locationOptions: LocationPickerOption[];
   /** From active location filter: `null` = no preference, `""` = unset / no location on file */
   preferredLocation: string | null;
-  /** Prefill serial when opening from “find on worksheet” with no match */
-  initialSerial?: string | null;
+  /** Prefill tag number when opening from Look up with no match */
+  initialTagNumber?: string | null;
   onDismiss: () => void;
   onSave: (payload: DiscoveredSystemPayload) => void;
 };
@@ -62,7 +62,7 @@ type FormProps = {
   busy: boolean;
   locationOptions: LocationPickerOption[];
   preferredLocation: string | null;
-  initialSerial?: string | null;
+  initialTagNumber?: string | null;
   onSave: (payload: DiscoveredSystemPayload) => void;
 };
 
@@ -70,14 +70,15 @@ function AddDiscoveredSystemForm({
   busy,
   locationOptions,
   preferredLocation,
-  initialSerial,
+  initialTagNumber,
   onSave,
 }: FormProps) {
   const initial = deriveInitialSelect(preferredLocation, locationOptions);
   const [locationSelect, setLocationSelect] = useState(initial.select);
   const [locationCustom, setLocationCustom] = useState(initial.custom);
-  const [serialId, setSerialId] = useState(() => (initialSerial?.trim() ? initialSerial.trim() : ""));
-  const [tagNumber, setTagNumber] = useState("");
+  const [tagNumber, setTagNumber] = useState(() =>
+    initialTagNumber?.trim() ? initialTagNumber.trim() : ""
+  );
   const [manufacturer, setManufacturer] = useState("");
   const [model, setModel] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -100,11 +101,9 @@ function AddDiscoveredSystemForm({
       resolvedLocation = locationSelect;
     }
 
-    const sid = trimOrEmpty(serialId);
-
     setFormError(null);
     onSave({
-      serial_id: sid,
+      serial_id: "",
       tag_number: trimOrEmpty(tagNumber),
       location: resolvedLocation,
       manufacturer: trimOrEmpty(manufacturer),
@@ -194,21 +193,7 @@ function AddDiscoveredSystemForm({
               value={tagNumber}
               onChange={(e) => setTagNumber(e.target.value)}
               className={fieldClass}
-              placeholder="Asset / tag number if present"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1.5">
-            <span className={labelClass}>Serial / service tag</span>
-            <input
-              type="text"
-              enterKeyHint="next"
-              autoComplete="off"
-              disabled={busy}
-              value={serialId}
-              onChange={(e) => setSerialId(e.target.value)}
-              className={fieldClass}
-              placeholder="Sticker serial or service tag"
+              placeholder="Scan or type the tag number"
             />
           </label>
         </fieldset>
@@ -285,7 +270,7 @@ export function AddDiscoveredSystemDialog({
   formMountKey,
   locationOptions,
   preferredLocation,
-  initialSerial,
+  initialTagNumber,
   onDismiss,
   onSave,
 }: AddDiscoveredSystemDialogProps) {
@@ -316,11 +301,11 @@ export function AddDiscoveredSystemDialog({
           >
             {open ? (
               <AddDiscoveredSystemForm
-                key={`${formMountKey}-${initialSerial ?? ""}-${preferredLocation ?? ""}`}
+                key={`${formMountKey}-${initialTagNumber ?? ""}-${preferredLocation ?? ""}`}
                 busy={busy}
                 locationOptions={locationOptions}
                 preferredLocation={preferredLocation}
-                initialSerial={initialSerial}
+                initialTagNumber={initialTagNumber}
                 onSave={onSave}
               />
             ) : null}

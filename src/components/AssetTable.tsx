@@ -32,12 +32,17 @@ import {
   buildLocationFilterOptions,
   distinctLocationPickerOptionsFromRows,
 } from "@/lib/location-filter";
+import {
+  textMatchesQuery,
+} from "@/lib/inventory-search";
+import { recordLocationVisit, suggestNextLocations } from "@/lib/scan-path";
 import { getSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase/browser-client";
 import { fetchAllInventoryItemRows } from "@/lib/supabase/fetch-all-inventory-items";
 import { cn } from "@/lib/utils";
 import type { Asset } from "@/types/asset";
 
 import { AssetRow } from "@/components/AssetRow";
+import { TagOcrCapture } from "@/components/TagOcrCapture";
 import { CelebrationToast } from "@/components/CelebrationToast";
 import {
   AddDiscoveredSystemDialog,
@@ -71,7 +76,7 @@ export function AssetTable({
   const [notFoundId, setNotFoundId] = useState<string | null>(null);
   const [discoveredDialogOpen, setDiscoveredDialogOpen] = useState(false);
   const [discoveredFormKey, setDiscoveredFormKey] = useState(0);
-  const [discoveredPrefillSerial, setDiscoveredPrefillSerial] = useState<string | null>(null);
+  const [discoveredPrefillTag, setDiscoveredPrefillTag] = useState<string | null>(null);
   const [discoveredLocationOverride, setDiscoveredLocationOverride] = useState<string | null>(
     null
   );
@@ -79,6 +84,10 @@ export function AssetTable({
   const [roomDialogOpen, setRoomDialogOpen] = useState(false);
   const [roomFormKey, setRoomFormKey] = useState(0);
   const [roomBusy, setRoomBusy] = useState(false);
+  const [queueRoomSearch, setQueueRoomSearch] = useState("");
+  const [lookupDraft, setLookupDraft] = useState("");
+  const [findInitialQuery, setFindInitialQuery] = useState<string | null>(null);
+  const [pathVersion, setPathVersion] = useState(0);
   const [findDialogOpen, setFindDialogOpen] = useState(false);
   const [findDialogMountKey, setFindDialogMountKey] = useState(0);
   const [findLookupBusy, setFindLookupBusy] = useState(false);
@@ -144,6 +153,52 @@ export function AssetTable({
       ),
     [pendingAssets, locationFilter]
   );
+
+  const roomQueueAssets = useMemo(() => {
+    const q = queueRoomSearch.trim();
+    if (!q) return filteredPendingAssets;
+    return filteredPendingAssets.filter((a) => {
+      const blob = [
+        a.computer_name,
+        a.serial_id,
+        a.asset_id,
+        a.manufacturer,
+        a.model,
+        a.location,
+      ]
+        .map((v) => v ?? "")
+        .join(" ");
+      return textMatchesQuery(blob, q);
+    });
+  }, [filteredPendingAssets, queueRoomSearch]);
+
+  const setLocationFilterAndClearRoomSearch = useCallback((next: string) => {
+    setQueueRoomSearch("");
+    setLocationFilter(next);
+    if (next !== LOCATION_FILTER_ALL && next !== LOCATION_FILTER_UNSET) {
+      recordLocationVisit(next);
+      setPathVersion((v) => v + 1);
+    }
+  }, []);
+
+  const openLookUp = useCallback((prefill?: string) => {
+    const q = (prefill ?? lookupDraft).trim();
+    setFindInitialQuery(q.length > 0 ? q : null);
+    setFindDialogMountKey((k) => k + 1);
+    setFindDialogOpen(true);
+  }, [lookupDraft]);
+
+  const nextRoomSuggestions = useMemo(() => {
+    void pathVersion;
+    const available = locationFilterOptions
+      .map((o) => o.value)
+      .filter((v) => v !== LOCATION_FILTER_ALL && v !== LOCATION_FILTER_UNSET && v.trim());
+    const current =
+      locationFilter === LOCATION_FILTER_ALL || locationFilter === LOCATION_FILTER_UNSET
+        ? null
+        : locationFilter;
+    return suggestNextLocations(current, available, 3);
+  }, [locationFilter, locationFilterOptions, pathVersion]);
 
   const filteredResolvedAssets = useMemo(
     () =>
@@ -219,10 +274,10 @@ export function AssetTable({
         : allowed.has(locationFilter);
     if (!ok) {
       queueMicrotask(() => {
-        setLocationFilter(LOCATION_FILTER_ALL);
+        setLocationFilterAndClearRoomSearch(LOCATION_FILTER_ALL);
       });
     }
-  }, [locationFilter, locationFilterOptions]);
+  }, [locationFilter, locationFilterOptions, setLocationFilterAndClearRoomSearch]);
 
   const reload = useCallback(async () => {
     if (!hasSupabaseConfig()) {
@@ -385,6 +440,10 @@ export function AssetTable({
         if (error) throw error;
 
         rollbackRef.current = null;
+        if (asset.location?.trim()) {
+          recordLocationVisit(asset.location);
+          setPathVersion((v) => v + 1);
+        }
       } catch (e) {
         const prevRow = rollbackRef.current;
         if (prevRow) {
@@ -514,7 +573,7 @@ export function AssetTable({
           return sortInventoryRows([...curr, row]);
         });
         setDiscoveredDialogOpen(false);
-        setDiscoveredPrefillSerial(null);
+        setDiscoveredPrefillTag(null);
         setDiscoveredLocationOverride(null);
       } catch (e) {
         const msg =
@@ -553,7 +612,7 @@ export function AssetTable({
         if (error) throw error;
 
         setRoomDialogOpen(false);
-        setLocationFilter(loc);
+        setLocationFilterAndClearRoomSearch(loc);
         setToastTitle("Room assigned");
         setToastMessage(
           `Moved ${deviceIds.length} device${deviceIds.length === 1 ? "" : "s"} to ${loc}.`
@@ -573,7 +632,7 @@ export function AssetTable({
         setRoomBusy(false);
       }
     },
-    [inventoryRows]
+    [inventoryRows, setLocationFilterAndClearRoomSearch]
   );
 
   const handleLookupConfirm = useCallback(async (rowId: string, locationResolved: string) => {
@@ -652,6 +711,8 @@ export function AssetTable({
 
       lookupRollbackRef.current = null;
       setFindDialogOpen(false);
+      recordLocationVisit(locationNorm);
+      setPathVersion((v) => v + 1);
       setToastTitle("Saved");
       setToastMessage("Location updated and row marked scanned.");
       setToastOpen(true);
@@ -933,10 +994,14 @@ export function AssetTable({
         inventoryRows={inventoryRows}
         locationOptions={discoveredLocationOptions}
         preferredLocation={preferredLocationForDiscovered}
-        onDismiss={() => setFindDialogOpen(false)}
+        initialQuery={findInitialQuery}
+        onDismiss={() => {
+          setFindDialogOpen(false);
+          setFindInitialQuery(null);
+        }}
         onConfirmMatch={(id, loc) => void handleLookupConfirm(id, loc)}
         onRequestManualAdd={(prefill) => {
-          setDiscoveredPrefillSerial(prefill.length > 0 ? prefill : null);
+          setDiscoveredPrefillTag(prefill.length > 0 ? prefill : null);
           setDiscoveredLocationOverride(null);
           setDiscoveredFormKey((k) => k + 1);
           setDiscoveredDialogOpen(true);
@@ -948,9 +1013,9 @@ export function AssetTable({
         formMountKey={discoveredFormKey}
         locationOptions={discoveredLocationOptions}
         preferredLocation={preferredLocationForDiscovered}
-        initialSerial={discoveredPrefillSerial}
+        initialTagNumber={discoveredPrefillTag}
         onDismiss={() => {
-          setDiscoveredPrefillSerial(null);
+          setDiscoveredPrefillTag(null);
           setDiscoveredLocationOverride(null);
           setDiscoveredDialogOpen(false);
         }}
@@ -965,14 +1030,14 @@ export function AssetTable({
         onMoveDevices={(loc, ids) => void handleMoveDevicesToRoom(loc, ids)}
         onAddNewInRoom={(loc) => {
           setRoomDialogOpen(false);
-          setDiscoveredPrefillSerial(null);
+          setDiscoveredPrefillTag(null);
           setDiscoveredLocationOverride(loc);
           setDiscoveredFormKey((k) => k + 1);
           setDiscoveredDialogOpen(true);
         }}
         onUseRoomOnly={(loc) => {
           setRoomDialogOpen(false);
-          setLocationFilter(loc);
+          setLocationFilterAndClearRoomSearch(loc);
           setToastTitle("Room ready");
           setToastMessage(`Filter set to ${loc}. Add or scan devices there.`);
           setToastOpen(true);
@@ -987,7 +1052,7 @@ export function AssetTable({
 
       <main
         className={cn(
-          "mx-auto flex min-h-0 w-full min-w-0 max-w-lg flex-1 flex-col gap-5 overflow-x-hidden px-4 pb-6 pt-5 max-[361px]:px-3",
+          "mx-auto flex min-h-0 w-full min-w-0 max-w-lg flex-1 flex-col gap-4 overflow-x-hidden px-4 pb-6 pt-5 max-[361px]:px-3 md:max-w-3xl lg:max-w-7xl lg:gap-4 lg:px-6",
           inventoryView === "scanned" &&
             "max-sm:pb-[calc(var(--site-footer-reserve)+4.75rem)]"
         )}
@@ -1046,7 +1111,7 @@ export function AssetTable({
             </p>
             <LocationFilterBar
               value={locationFilter}
-              onChange={setLocationFilter}
+              onChange={setLocationFilterAndClearRoomSearch}
               options={locationFilterOptions}
             />
             {locationFilterActive && filteredResolvedAssets.length > 0 ? (
@@ -1078,7 +1143,7 @@ export function AssetTable({
                   type="button"
                   variant="outline"
                   className="mx-auto mt-4 h-12 rounded-xl border-amber-500/35 text-amber-50"
-                  onClick={() => setLocationFilter(LOCATION_FILTER_ALL)}
+                  onClick={() => setLocationFilterAndClearRoomSearch(LOCATION_FILTER_ALL)}
                 >
                   Show all locations
                 </Button>
@@ -1105,216 +1170,337 @@ export function AssetTable({
         ) : null}
 
         {!loading && counts.total > 0 && inventoryView === "queue" ? (
-          <div className="flex flex-col gap-3">
-            <section
-              aria-live="polite"
-              className="rounded-3xl border border-primary/35 bg-gradient-to-b from-primary/20 to-primary/5 px-5 py-6 text-center shadow-lg shadow-black/30 ring-1 ring-primary/25"
-            >
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">
-                {locationFilterActive
-                  ? "Left in this room"
-                  : "Left to scan (all rooms)"}
-              </p>
-              <p className="mt-2 text-5xl font-bold tabular-nums leading-none text-foreground sm:text-6xl">
-                {locationFilterActive ? filteredPendingCount : counts.pending}
-              </p>
-              <p className="mt-3 text-sm text-muted-foreground">
-                {locationFilterActive ? (
-                  <>
-                    Devices still pending in{" "}
-                    <span className="font-semibold text-foreground">{selectedLocationLabel}</span>.
-                    Tap <span className="font-semibold text-foreground">In file</span> or ✕ on the
-                    room card to go home.
-                  </>
-                ) : (
-                  <>
-                    Pick a room below to open its list. Use Look up if you only need one device.
-                  </>
-                )}
-              </p>
-            </section>
-            <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col gap-4">
+            {/* Counts — big on every screen; on PC they sit in a row with Done / In file */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]">
+              <section
+                aria-live="polite"
+                className="rounded-3xl border border-primary/35 bg-gradient-to-b from-primary/20 to-primary/5 px-5 py-5 text-center shadow-lg shadow-black/30 ring-1 ring-primary/25 sm:col-span-2 lg:col-span-1 lg:py-6"
+              >
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-primary">
+                  {locationFilterActive ? "Left in this room" : "Left to scan (all rooms)"}
+                </p>
+                <p className="mt-2 text-5xl font-bold tabular-nums leading-none text-foreground sm:text-6xl">
+                  {locationFilterActive ? filteredPendingCount : counts.pending}
+                </p>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  {locationFilterActive ? (
+                    <>
+                      Still pending in{" "}
+                      <span className="font-semibold text-foreground">{selectedLocationLabel}</span>.
+                    </>
+                  ) : (
+                    <>Pick a room to open its list, or start from Look up.</>
+                  )}
+                </p>
+              </section>
+
               <button
                 type="button"
                 disabled={!canOpenScannedView}
                 title={doneTileTitle}
-                aria-label={`Done: ${counts.resolved} completed (scanned + not found at location). ${doneTileTitle}`}
+                aria-label={`Done: ${counts.resolved} completed. ${doneTileTitle}`}
                 onClick={() => openScannedView()}
-                className="rounded-2xl border border-border bg-card/80 px-3 py-4 text-center shadow-md shadow-black/20 backdrop-blur-sm outline-offset-4 transition-colors enabled:cursor-pointer enabled:hover:bg-card enabled:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:enabled:active:scale-100"
+                className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card/80 px-3 py-4 text-center shadow-md shadow-black/20 backdrop-blur-sm outline-offset-4 transition-colors enabled:cursor-pointer enabled:hover:bg-card enabled:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 motion-reduce:enabled:active:scale-100"
               >
                 <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
                   Done
                 </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-400">
+                <p className="mt-1 text-3xl font-bold tabular-nums text-emerald-400 lg:text-4xl">
                   {counts.resolved}
                 </p>
               </button>
+
               {locationFilterActive ? (
                 <button
                   type="button"
                   title="Clear location filter — overview for all sites"
-                  aria-label={`In file: ${counts.total} total rows. Clear location filter and return to all locations.`}
+                  aria-label={`In file: ${counts.total} total rows. Clear location filter.`}
                   onClick={() => {
-                    setLocationFilter(LOCATION_FILTER_ALL);
+                    setLocationFilterAndClearRoomSearch(LOCATION_FILTER_ALL);
                     queueMicrotask(() => window.scrollTo({ top: 0, behavior: "smooth" }));
                   }}
-                  className="rounded-2xl border border-border bg-card/80 px-3 py-4 text-center shadow-md shadow-black/20 backdrop-blur-sm outline-offset-4 transition-colors cursor-pointer hover:bg-card active:scale-[0.98] touch-manipulation motion-reduce:active:scale-100"
+                  className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card/80 px-3 py-4 text-center shadow-md shadow-black/20 backdrop-blur-sm outline-offset-4 transition-colors cursor-pointer hover:bg-card active:scale-[0.98] touch-manipulation motion-reduce:active:scale-100"
                 >
                   <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
                     In file
                   </p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                  <p className="mt-1 text-3xl font-bold tabular-nums text-foreground lg:text-4xl">
                     {counts.total}
                   </p>
-                  <p className="mt-0.5 text-[0.65rem] text-muted-foreground">total rows</p>
+                  <p className="mt-0.5 text-[0.65rem] text-muted-foreground">clear room filter</p>
                 </button>
               ) : (
-                <div className="rounded-2xl border border-border bg-card/80 px-3 py-4 text-center shadow-md shadow-black/20 backdrop-blur-sm">
+                <div className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card/80 px-3 py-4 text-center shadow-md shadow-black/20 backdrop-blur-sm">
                   <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
                     In file
                   </p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                  <p className="mt-1 text-3xl font-bold tabular-nums text-foreground lg:text-4xl">
                     {counts.total}
                   </p>
                   <p className="mt-0.5 text-[0.65rem] text-muted-foreground">total rows</p>
                 </div>
               )}
             </div>
-            <LocationFilterBar
-              value={locationFilter}
-              onChange={setLocationFilter}
-              options={locationFilterOptions}
-            />
-            {hasSupabaseConfig() && counts.total > 0 ? (
+
+            {/* Look up first — on PC: full-width bar + actions in one row */}
+            {hasSupabaseConfig() ? (
               <section
-                aria-labelledby="queue-extras-heading"
+                aria-labelledby="lookup-heading"
                 className={cn(
-                  "rounded-2xl border border-dashed border-cyan-400/45 bg-gradient-to-br from-cyan-950/80 via-teal-950/45 to-slate-950/40 p-3 shadow-lg shadow-cyan-950/35 ring-1 ring-cyan-400/15 backdrop-blur-sm sm:p-3.5",
-                  (discoveredSaving || findLookupBusy || roomBusy) &&
-                    "pointer-events-none opacity-70"
+                  "rounded-2xl border border-teal-400/40 bg-gradient-to-br from-teal-950/70 via-cyan-950/40 to-card/80 p-3.5 shadow-lg shadow-teal-950/25 ring-1 ring-teal-400/15 sm:p-4",
+                  (discoveredSaving || findLookupBusy || roomBusy) && "pointer-events-none opacity-70"
                 )}
               >
-                <div className="flex items-start gap-2.5">
-                  <span
-                    className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-100 ring-1 ring-cyan-400/40"
-                    aria-hidden
-                  >
-                    {discoveredSaving || findLookupBusy || roomBusy ? (
-                      <Loader2Icon className="size-4 animate-spin" />
-                    ) : (
-                      <PackagePlus className="size-4 opacity-95" />
-                    )}
-                  </span>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-4">
                   <div className="min-w-0 flex-1">
                     <h2
-                      id="queue-extras-heading"
-                      className="text-sm font-semibold leading-tight text-cyan-50"
+                      id="lookup-heading"
+                      className="text-sm font-semibold tracking-tight text-teal-50"
                     >
-                      Quick actions
+                      Look up
                     </h2>
-                    <p className="mt-0.5 text-[0.7rem] leading-snug text-cyan-200/80">
-                      Find one device, add missing hardware, or set up a new room.
+                    <p className="mt-0.5 text-xs text-teal-200/75">
+                      Tag → match or add new. Camera works on phone and laptop.
                     </p>
-                    <div className="mt-3 flex flex-col gap-2 sm:grid sm:grid-cols-3 sm:gap-2">
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        type="search"
+                        enterKeyHint="search"
+                        autoComplete="off"
+                        value={lookupDraft}
+                        onChange={(e) => setLookupDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            openLookUp();
+                          }
+                        }}
+                        placeholder="Tag number…"
+                        className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background/90 px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                      <TagOcrCapture
+                        disabled={discoveredSaving || findLookupBusy || roomBusy}
+                        onCaptured={(text) => {
+                          setLookupDraft(text);
+                          openLookUp(text);
+                        }}
+                      />
                       <Button
                         type="button"
                         disabled={discoveredSaving || findLookupBusy || roomBusy}
                         aria-busy={findLookupBusy}
-                        onClick={() => {
-                          setFindDialogMountKey((k) => k + 1);
-                          setFindDialogOpen(true);
-                        }}
-                        variant="outline"
-                        size="sm"
-                        className="h-auto min-h-12 touch-manipulation flex-row items-center justify-start gap-3 rounded-xl border-teal-400/45 bg-teal-950/35 px-3 py-3 text-left text-sm font-semibold text-teal-50 shadow-sm hover:bg-teal-950/55 sm:flex-col sm:items-stretch sm:justify-center sm:gap-0.5 sm:px-2 sm:py-2.5 sm:text-center sm:text-xs"
+                        onClick={() => openLookUp()}
+                        className="h-11 shrink-0 gap-2 rounded-xl bg-teal-600 px-4 font-semibold text-white hover:bg-teal-500"
                       >
-                        <SearchIcon className="size-5 shrink-0 opacity-90 sm:mx-auto sm:size-4" aria-hidden />
-                        <span className="min-w-0 flex-1 sm:flex-none">
-                          <span className="block">Look up</span>
-                          <span className="block text-[0.7rem] font-normal text-teal-200/85 sm:text-[0.58rem]">
-                            Tag, serial, asset ID
-                          </span>
-                        </span>
-                      </Button>
-                      <Button
-                        type="button"
-                        disabled={discoveredSaving || findLookupBusy || roomBusy}
-                        aria-busy={discoveredSaving}
-                        onClick={() => {
-                          setDiscoveredPrefillSerial(null);
-                          setDiscoveredLocationOverride(null);
-                          setDiscoveredFormKey((k) => k + 1);
-                          setDiscoveredDialogOpen(true);
-                        }}
-                        size="sm"
-                        className="h-auto min-h-12 touch-manipulation flex-row items-center justify-start gap-3 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 px-3 py-3 text-left text-sm font-semibold text-white shadow-md shadow-teal-950/40 ring-1 ring-white/10 hover:from-cyan-500 hover:to-teal-500 sm:flex-col sm:items-stretch sm:justify-center sm:gap-0.5 sm:px-2 sm:py-2.5 sm:text-center sm:text-xs"
-                      >
-                        {discoveredSaving ? (
-                          <span className="flex items-center gap-2">
-                            <Loader2Icon className="size-5 animate-spin sm:size-4" aria-hidden />
-                            Saving…
-                          </span>
+                        {findLookupBusy ? (
+                          <Loader2Icon className="size-4 animate-spin" aria-hidden />
                         ) : (
-                          <>
-                            <PackagePlus className="size-5 shrink-0 opacity-95 sm:mx-auto sm:size-4" aria-hidden />
-                            <span className="min-w-0 flex-1 sm:flex-none">
-                              <span className="block">Add new</span>
-                              <span className="block text-[0.7rem] font-normal text-white/85 sm:text-[0.58rem]">
-                                Not on the import
-                              </span>
-                            </span>
-                          </>
+                          <SearchIcon className="size-4" aria-hidden />
                         )}
-                      </Button>
-                      <Button
-                        type="button"
-                        disabled={discoveredSaving || findLookupBusy || roomBusy}
-                        aria-busy={roomBusy}
-                        onClick={() => {
-                          setRoomFormKey((k) => k + 1);
-                          setRoomDialogOpen(true);
-                        }}
-                        variant="outline"
-                        size="sm"
-                        className="h-auto min-h-12 touch-manipulation flex-row items-center justify-start gap-3 rounded-xl border-violet-400/45 bg-violet-950/40 px-3 py-3 text-left text-sm font-semibold text-violet-50 shadow-sm hover:bg-violet-950/60 sm:flex-col sm:items-stretch sm:justify-center sm:gap-0.5 sm:px-2 sm:py-2.5 sm:text-center sm:text-xs"
-                      >
-                        <DoorOpenIcon className="size-5 shrink-0 opacity-90 sm:mx-auto sm:size-4" aria-hidden />
-                        <span className="min-w-0 flex-1 sm:flex-none">
-                          <span className="block">Room</span>
-                          <span className="block text-[0.7rem] font-normal text-violet-200/85 sm:text-[0.58rem]">
-                            Create or move devices
-                          </span>
-                        </span>
+                        Search
                       </Button>
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:w-[22rem] lg:shrink-0 lg:grid-cols-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={discoveredSaving || findLookupBusy || roomBusy}
+                      onClick={() => {
+                        setDiscoveredPrefillTag(null);
+                        setDiscoveredLocationOverride(null);
+                        setDiscoveredFormKey((k) => k + 1);
+                        setDiscoveredDialogOpen(true);
+                      }}
+                      className="h-11 gap-1.5 rounded-xl border-cyan-400/35 bg-cyan-950/25 text-cyan-50"
+                    >
+                      <PackagePlus className="size-4 shrink-0" aria-hidden />
+                      Add new
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={discoveredSaving || findLookupBusy || roomBusy}
+                      onClick={() => {
+                        setRoomFormKey((k) => k + 1);
+                        setRoomDialogOpen(true);
+                      }}
+                      className="h-11 gap-1.5 rounded-xl border-violet-400/35 bg-violet-950/25 text-violet-50"
+                    >
+                      <DoorOpenIcon className="size-4 shrink-0" aria-hidden />
+                      Room
+                    </Button>
+                    {locationFilterActive && filteredPendingCount > 0 ? (
+                      <Button
+                        type="button"
+                        onClick={() => setShowFinishLocationAlert(true)}
+                        disabled={bulkScanning || bulkUnscanning}
+                        className="col-span-2 h-11 gap-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 sm:col-span-1"
+                      >
+                        {bulkScanning ? (
+                          <Loader2Icon className="size-4 animate-spin" aria-hidden />
+                        ) : (
+                          <CheckCheckIcon className="size-4 shrink-0" aria-hidden />
+                        )}
+                        Finish room
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={!canOpenScannedView}
+                        onClick={() => openScannedView()}
+                        className="col-span-2 h-11 rounded-xl border-border bg-card/50 sm:col-span-1"
+                      >
+                        View done
+                      </Button>
+                    )}
                   </div>
                 </div>
               </section>
             ) : null}
-            {locationFilterActive && filteredPendingCount > 0 ? (
-              <Button
-                type="button"
-                onClick={() => setShowFinishLocationAlert(true)}
-                disabled={bulkScanning || bulkUnscanning}
-                className="h-12 min-h-12 w-full touch-manipulation gap-2 rounded-2xl bg-emerald-600 text-white shadow-md shadow-emerald-950/50 hover:bg-emerald-500"
-              >
-                {bulkScanning ? (
+
+            {/* PC: room tools + list side by side — more options visible, not bigger chrome */}
+            <div
+              className={cn(
+                "flex flex-col gap-4",
+                "lg:grid lg:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)] lg:items-start lg:gap-5"
+              )}
+            >
+              <div className="flex flex-col gap-3">
+                <LocationFilterBar
+                  value={locationFilter}
+                  onChange={setLocationFilterAndClearRoomSearch}
+                  options={locationFilterOptions}
+                />
+
+                {nextRoomSuggestions.length > 0 ? (
+                  <section aria-label="Suggested next rooms" className="flex flex-col gap-2">
+                    <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                      Likely next
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {nextRoomSuggestions.map((loc) => (
+                        <button
+                          key={loc}
+                          type="button"
+                          onClick={() => setLocationFilterAndClearRoomSearch(loc)}
+                          className="h-9 max-w-full truncate rounded-xl border border-border bg-card/70 px-3 text-sm font-medium text-foreground touch-manipulation hover:border-primary/40 hover:bg-primary/10"
+                        >
+                          {loc}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+
+                <div className="hidden gap-2 lg:flex lg:flex-col">
+                  <DownloadButton
+                    fallbackRows={inventoryRows}
+                    className="w-full"
+                  />
+                  {hasSupabaseConfig() ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-10 w-full rounded-xl"
+                      disabled={loading}
+                      onClick={() => void reload()}
+                    >
+                      <RefreshCwIcon className="size-4 shrink-0 opacity-90" aria-hidden />
+                      Refresh
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="flex min-w-0 flex-col gap-3">
+                {locationFilterActive ? (
                   <>
-                    <Loader2Icon className="size-5 animate-spin shrink-0" aria-hidden />
-                    Finishing this location…
+                    {pendingAssets.length > 0 && filteredPendingAssets.length === 0 ? (
+                      <section className="rounded-2xl border border-amber-500/35 bg-amber-950/35 px-4 py-5 text-center">
+                        <p className="text-sm font-medium text-amber-50">
+                          No pending items match this location filter.
+                        </p>
+                        <p className="mt-2 text-xs text-amber-200/85">
+                          {counts.pending > 0
+                            ? `${counts.pending} item(s) pending at other locations — switch filter or choose All locations.`
+                            : "Either change the filter or everything here is scanned."}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="mx-auto mt-4 h-11 rounded-xl border-amber-500/35 text-amber-50"
+                          onClick={() => setLocationFilterAndClearRoomSearch(LOCATION_FILTER_ALL)}
+                        >
+                          Show all locations
+                        </Button>
+                      </section>
+                    ) : null}
+
+                    {filteredPendingAssets.length > 0 ? (
+                      <section className="flex flex-col gap-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                          <div>
+                            <h2 className="text-[0.7rem] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                              To scan in this room
+                            </h2>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {queueRoomSearch.trim()
+                                ? `${roomQueueAssets.length} match${roomQueueAssets.length === 1 ? "" : "es"}`
+                                : `${filteredPendingAssets.length} device${filteredPendingAssets.length === 1 ? "" : "s"} · ${selectedLocationLabel}`}
+                            </p>
+                          </div>
+                          <label className="relative block w-full sm:max-w-xs">
+                            <SearchIcon
+                              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                              aria-hidden
+                            />
+                            <input
+                              type="search"
+                              enterKeyHint="search"
+                              autoComplete="off"
+                              value={queueRoomSearch}
+                              onChange={(e) => setQueueRoomSearch(e.target.value)}
+                              placeholder="Search in this room…"
+                              className="h-10 w-full rounded-xl border border-border bg-card/80 pl-9 pr-3 text-sm shadow-inner outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                            />
+                          </label>
+                        </div>
+                        {roomQueueAssets.length === 0 ? (
+                          <p className="rounded-2xl border border-border/70 bg-muted/30 px-4 py-5 text-center text-sm text-muted-foreground">
+                            No devices in this room match that search.
+                          </p>
+                        ) : (
+                          <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                            {roomQueueAssets.map((asset) => (
+                              <AssetRow
+                                key={asset.id}
+                                asset={asset}
+                                scanning={pendingId === asset.id}
+                                notFoundBusy={notFoundId === asset.id}
+                                onScan={handleScan}
+                                onNotFound={handleNotFound}
+                              />
+                            ))}
+                          </ul>
+                        )}
+                      </section>
+                    ) : null}
                   </>
                 ) : (
-                  <>
-                    <CheckCheckIcon className="size-5 shrink-0" aria-hidden />
-                    Finish scan for this location
-                  </>
+                  <p className="rounded-2xl border border-dashed border-border/80 bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground lg:py-10">
+                    Select a room on the left to see its devices here — or keep scanning from Look up.
+                  </p>
                 )}
-              </Button>
-            ) : null}
+              </div>
+            </div>
           </div>
         ) : null}
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 lg:hidden">
           <DownloadButton fallbackRows={inventoryRows} className="min-w-0 basis-full sm:min-w-[8rem] sm:basis-auto" />
           {hasSupabaseConfig() && (
             <Button
@@ -1368,57 +1554,7 @@ export function AssetTable({
               ))}
             </div>
           </div>
-        ) : (
-          <>
-            {inventoryView === "queue" &&
-            !loading &&
-            pendingAssets.length > 0 &&
-            filteredPendingAssets.length === 0 &&
-            locationFilterActive ? (
-              <section className="rounded-2xl border border-amber-500/35 bg-amber-950/35 px-4 py-5 text-center">
-                <p className="text-sm font-medium text-amber-50">
-                  No pending items match this location filter.
-                </p>
-                <p className="mt-2 text-xs text-amber-200/85">
-                  {counts.pending > 0
-                    ? `${counts.pending} item(s) pending at other locations — switch filter or choose All locations.`
-                    : "Either change the filter or everything here is scanned."}
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="mx-auto mt-4 h-12 rounded-xl border-amber-500/35 text-amber-50"
-                  onClick={() => setLocationFilter(LOCATION_FILTER_ALL)}
-                >
-                  Show all locations
-                </Button>
-              </section>
-            ) : null}
-
-            {inventoryView === "queue" &&
-            !loading &&
-            locationFilterActive &&
-            filteredPendingAssets.length > 0 ? (
-              <>
-                <h2 className="text-[0.7rem] font-bold uppercase tracking-[0.16em] text-muted-foreground">
-                  To scan (filtered)
-                </h2>
-                <ul className="flex flex-col gap-4">
-                  {filteredPendingAssets.map((asset) => (
-                    <AssetRow
-                      key={asset.id}
-                      asset={asset}
-                      scanning={pendingId === asset.id}
-                      notFoundBusy={notFoundId === asset.id}
-                      onScan={handleScan}
-                      onNotFound={handleNotFound}
-                    />
-                  ))}
-                </ul>
-              </>
-            ) : null}
-          </>
-        )}
+        ) : null}
 
         {!loading &&
         !loadError &&
