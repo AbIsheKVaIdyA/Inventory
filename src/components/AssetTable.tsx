@@ -42,7 +42,6 @@ import { cn } from "@/lib/utils";
 import type { Asset } from "@/types/asset";
 
 import { AssetRow } from "@/components/AssetRow";
-import { TagOcrCapture } from "@/components/TagOcrCapture";
 import { CelebrationToast } from "@/components/CelebrationToast";
 import {
   AddDiscoveredSystemDialog,
@@ -1261,7 +1260,7 @@ export function AssetTable({
                       Look up
                     </h2>
                     <p className="mt-0.5 text-xs text-teal-200/75">
-                      Tag → match or add new. Camera works on phone and laptop.
+                      Tag → match or add new.
                     </p>
                     <div className="mt-2 flex gap-2">
                       <input
@@ -1278,13 +1277,6 @@ export function AssetTable({
                         }}
                         placeholder="Tag number…"
                         className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-background/90 px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      />
-                      <TagOcrCapture
-                        disabled={discoveredSaving || findLookupBusy || roomBusy}
-                        onCaptured={(text) => {
-                          setLookupDraft(text);
-                          openLookUp(text);
-                        }}
                       />
                       <Button
                         type="button"

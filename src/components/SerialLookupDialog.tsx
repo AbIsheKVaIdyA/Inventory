@@ -5,7 +5,6 @@ import { Loader2Icon, SearchIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
-import { TagOcrCapture } from "@/components/TagOcrCapture";
 import { displayLabelFromInventory, type InventoryItemRow } from "@/lib/inventory-map";
 import {
   inventorySearchMinQueryLength,
@@ -176,7 +175,7 @@ export function SerialLookupDialog({
               Look up device
             </AlertDialog.Title>
             <AlertDialog.Description className="mt-2 text-center text-sm leading-relaxed text-muted-foreground">
-              Start here: enter or scan a tag. Match it, or add it as new with the same number.
+              Start here: enter a tag number. Match it, or add it as new with the same number.
             </AlertDialog.Description>
 
             <div className="mt-4 flex flex-col gap-3">
@@ -205,13 +204,6 @@ export function SerialLookupDialog({
                   }}
                   placeholder="Tag number…"
                   className="min-h-12 min-w-0 flex-1 rounded-2xl border border-border bg-background/80 px-4 text-base outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
-                />
-                <TagOcrCapture
-                  disabled={busy}
-                  onCaptured={(text) => {
-                    setQuery(text);
-                    runSearch(text);
-                  }}
                 />
                 <Button
                   type="button"
