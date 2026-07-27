@@ -131,7 +131,7 @@ export function AssetRow({
             </div>
           </dl>
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="flex flex-col gap-2">
             <ScanButton
               asset={asset}
               scanning={scanning}
@@ -145,7 +145,7 @@ export function AssetRow({
               disabled={asset.status !== "pending" || rowBusy}
               aria-busy={notFoundBusy}
               onClick={() => onNotFound(asset)}
-              className="h-14 min-h-14 w-full touch-manipulation gap-2 rounded-2xl border-violet-500/40 bg-violet-950/35 text-base font-semibold text-violet-100 shadow-md shadow-black/20 hover:bg-violet-950/55 hover:text-violet-50"
+              className="h-12 min-h-12 w-full touch-manipulation gap-2 rounded-2xl border-violet-500/40 bg-violet-950/35 px-3 text-sm font-semibold text-violet-100 shadow-md shadow-black/20 hover:bg-violet-950/55 hover:text-violet-50 sm:h-14 sm:min-h-14 sm:text-base"
             >
               {notFoundBusy ? (
                 <>
@@ -155,7 +155,7 @@ export function AssetRow({
               ) : (
                 <>
                   <SearchXIcon className="size-5 shrink-0 opacity-90" aria-hidden />
-                  Not found at location
+                  <span className="min-w-0 truncate">Not found at location</span>
                 </>
               )}
             </Button>

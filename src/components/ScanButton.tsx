@@ -39,7 +39,7 @@ export function ScanButton({
       onClick={onScan}
       aria-busy={scanning}
       className={cn(
-        "h-14 min-h-14 w-full touch-manipulation rounded-2xl text-base font-semibold shadow-lg transition-all motion-reduce:transition-none active:scale-[0.99]",
+        "h-12 min-h-12 w-full touch-manipulation gap-2 rounded-2xl px-3 text-sm font-semibold shadow-lg transition-all motion-reduce:transition-none active:scale-[0.99] sm:h-14 sm:min-h-14 sm:text-base",
         scanned
           ? "border-border bg-muted/80 text-muted-foreground shadow-black/15"
           : "bg-gradient-to-br from-primary to-primary/85 text-primary-foreground shadow-emerald-900/30 ring-1 ring-emerald-400/25 hover:brightness-110 dark:shadow-black/40",
@@ -48,13 +48,13 @@ export function ScanButton({
     >
       {scanning ? (
         <>
-          <Loader2Icon className="size-5 animate-spin" aria-hidden />
+          <Loader2Icon className="size-5 shrink-0 animate-spin" aria-hidden />
           Saving…
         </>
       ) : scanned ? (
         "Recorded"
       ) : (
-        "Mark as scanned"
+        <span className="min-w-0 truncate">Mark as scanned</span>
       )}
     </Button>
   );
