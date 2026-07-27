@@ -43,7 +43,7 @@ type SerialLookupDialogProps = {
   inventoryRows: InventoryItemRow[];
   locationOptions: LocationPickerOption[];
   preferredLocation: string | null;
-  /** Prefill + auto-search when dialog opens (Look up bar / OCR). */
+  /** Prefill + auto-search when dialog opens from the Look up bar. */
   initialQuery?: string | null;
   onDismiss: () => void;
   onConfirmMatch: (rowId: string, location: string) => void | Promise<void>;
