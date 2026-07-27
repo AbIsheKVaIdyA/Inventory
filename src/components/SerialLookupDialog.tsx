@@ -12,6 +12,11 @@ import {
   type InventorySearchHit,
 } from "@/lib/inventory-search";
 import type { LocationPickerOption } from "@/lib/location-filter";
+import {
+  suggestWhereIsItNow,
+  whereSuggestLabel,
+  type WhereSuggestReason,
+} from "@/lib/scan-path";
 
 import { cn } from "@/lib/utils";
 
@@ -75,7 +80,25 @@ export function SerialLookupDialog({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [locationSelect, setLocationSelect] = useState(seededLoc.select);
   const [locationCustom, setLocationCustom] = useState(seededLoc.custom);
+  const [locationHint, setLocationHint] = useState<WhereSuggestReason | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+
+  function applyWhereSuggestion(rowLocation: string | null | undefined) {
+    const suggestion = suggestWhereIsItNow({
+      preferredFilter: preferredLocation,
+      rowLocation,
+    });
+    if (!suggestion) {
+      setLocationSelect(SEL_PICK);
+      setLocationCustom("");
+      setLocationHint(null);
+      return;
+    }
+    const initial = deriveInitialSelect(suggestion.location, locationOptions);
+    setLocationSelect(initial.select);
+    setLocationCustom(initial.custom);
+    setLocationHint(suggestion.reason);
+  }
 
   function resetForClose() {
     setQuery("");
@@ -84,6 +107,7 @@ export function SerialLookupDialog({
     setSelectedId(null);
     setLocationSelect(SEL_PICK);
     setLocationCustom("");
+    setLocationHint(null);
     setFormError(null);
   }
 
@@ -100,9 +124,7 @@ export function SerialLookupDialog({
     setLastSearch(q);
     setHits(searchInventoryWorksheetHits(inventoryRows, q));
     setSelectedId(null);
-    const initial = deriveInitialSelect(preferredLocation, locationOptions);
-    setLocationSelect(initial.select);
-    setLocationCustom(initial.custom);
+    applyWhereSuggestion(null);
   }
 
   function resolveLocation(): { ok: true; value: string } | { ok: false; message: string } {
@@ -270,6 +292,7 @@ export function SerialLookupDialog({
                                 onClick={() => {
                                   setSelectedId(r.id);
                                   setFormError(null);
+                                  applyWhereSuggestion(r.location);
                                 }}
                                 className={cn(
                                   "w-full rounded-2xl border px-3 py-3 text-left text-sm transition-colors",
@@ -323,6 +346,11 @@ export function SerialLookupDialog({
                           <p className="text-xs font-bold uppercase tracking-wide text-teal-600 dark:text-teal-300">
                             Where is it now?
                           </p>
+                          {locationHint ? (
+                            <p className="text-[0.7rem] leading-snug text-teal-200/80">
+                              Auto-filled · {whereSuggestLabel(locationHint)}
+                            </p>
+                          ) : null}
                           <label className="flex flex-col gap-1.5">
                             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                               Location <span className="text-red-300">*</span>
@@ -330,7 +358,10 @@ export function SerialLookupDialog({
                             <select
                               value={locationSelect}
                               disabled={busy}
-                              onChange={(e) => setLocationSelect(e.target.value)}
+                              onChange={(e) => {
+                                setLocationSelect(e.target.value);
+                                setLocationHint(null);
+                              }}
                               className="min-h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             >
                               <option value={SEL_PICK}>Select location…</option>
@@ -353,10 +384,13 @@ export function SerialLookupDialog({
                               <input
                                 type="text"
                                 disabled={busy}
-                                value={locationCustom}
-                                onChange={(e) => setLocationCustom(e.target.value)}
-                                className="min-h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                placeholder="Room, site, or area"
+                value={locationCustom}
+                onChange={(e) => {
+                  setLocationCustom(e.target.value);
+                  setLocationHint(null);
+                }}
+                className="min-h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                placeholder="Room, site, or area"
                               />
                             </label>
                           ) : null}

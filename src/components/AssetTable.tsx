@@ -2,6 +2,7 @@
 
 import {
   ArrowLeftIcon,
+  BarChart3Icon,
   CheckCheckIcon,
   DoorOpenIcon,
   Loader2Icon,
@@ -35,13 +36,19 @@ import {
 import {
   textMatchesQuery,
 } from "@/lib/inventory-search";
-import { recordLocationVisit, suggestNextLocations } from "@/lib/scan-path";
+import { recordScanActivity, getDailyAnomalies } from "@/lib/scan-activity";
+import {
+  getMostRecentLocation,
+  recordLocationVisit,
+  suggestNextLocations,
+} from "@/lib/scan-path";
 import { getSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase/browser-client";
 import { fetchAllInventoryItemRows } from "@/lib/supabase/fetch-all-inventory-items";
 import { cn } from "@/lib/utils";
 import type { Asset } from "@/types/asset";
 
 import { AssetRow } from "@/components/AssetRow";
+import { InventoryAnalyticsView } from "@/components/InventoryAnalyticsView";
 import { CelebrationToast } from "@/components/CelebrationToast";
 import {
   AddDiscoveredSystemDialog,
@@ -87,6 +94,7 @@ export function AssetTable({
   const [lookupDraft, setLookupDraft] = useState("");
   const [findInitialQuery, setFindInitialQuery] = useState<string | null>(null);
   const [pathVersion, setPathVersion] = useState(0);
+  const [activityVersion, setActivityVersion] = useState(0);
   const [findDialogOpen, setFindDialogOpen] = useState(false);
   const [findDialogMountKey, setFindDialogMountKey] = useState(0);
   const [findLookupBusy, setFindLookupBusy] = useState(false);
@@ -104,7 +112,9 @@ export function AssetTable({
   const unscanRollbackRef = useRef<InventoryItemRow | null>(null);
   const userRef = useRef(scannerEmail);
   const [locationFilter, setLocationFilter] = useState<string>(LOCATION_FILTER_ALL);
-  const [inventoryView, setInventoryView] = useState<"queue" | "scanned">("queue");
+  const [inventoryView, setInventoryView] = useState<"queue" | "scanned" | "analytics">(
+    "queue"
+  );
 
   const assets: Asset[] = useMemo(
     () => sortInventoryRows(inventoryRows).map((r) => inventoryItemToAsset(r)),
@@ -140,10 +150,13 @@ export function AssetTable({
 
   const preferredLocationForDiscovered = useMemo(() => {
     if (discoveredLocationOverride !== null) return discoveredLocationOverride;
-    if (locationFilter === LOCATION_FILTER_ALL) return null;
+    if (locationFilter === LOCATION_FILTER_ALL) {
+      void pathVersion;
+      return getMostRecentLocation();
+    }
     if (locationFilter === LOCATION_FILTER_UNSET) return "";
     return locationFilter;
-  }, [discoveredLocationOverride, locationFilter]);
+  }, [discoveredLocationOverride, locationFilter, pathVersion]);
 
   const filteredPendingAssets = useMemo(
     () =>
@@ -249,6 +262,16 @@ export function AssetTable({
     setInventoryView("scanned");
     queueMicrotask(() => window.scrollTo({ top: 0, behavior: "smooth" }));
   }, [canOpenScannedView]);
+
+  const openAnalyticsView = useCallback(() => {
+    setInventoryView("analytics");
+    queueMicrotask(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+  }, []);
+
+  const insightNoteCount = useMemo(() => {
+    void activityVersion;
+    return getDailyAnomalies().length;
+  }, [activityVersion]);
 
   useEffect(() => {
     if (inventoryView !== "scanned") return;
@@ -443,6 +466,8 @@ export function AssetTable({
           recordLocationVisit(asset.location);
           setPathVersion((v) => v + 1);
         }
+        recordScanActivity({ type: "scan", location: asset.location });
+        setActivityVersion((v) => v + 1);
       } catch (e) {
         const prevRow = rollbackRef.current;
         if (prevRow) {
@@ -507,6 +532,8 @@ export function AssetTable({
       if (error) throw error;
 
       notFoundRollbackRef.current = null;
+      recordScanActivity({ type: "not_found", location: asset.location });
+      setActivityVersion((v) => v + 1);
     } catch (e) {
       const prevRow = notFoundRollbackRef.current;
       if (prevRow) {
@@ -571,6 +598,12 @@ export function AssetTable({
           if (curr.some((r) => r.id === row.id)) return sortInventoryRows(curr);
           return sortInventoryRows([...curr, row]);
         });
+        if (locationNorm) {
+          recordLocationVisit(locationNorm);
+          setPathVersion((v) => v + 1);
+        }
+        recordScanActivity({ type: "add", location: locationNorm });
+        setActivityVersion((v) => v + 1);
         setDiscoveredDialogOpen(false);
         setDiscoveredPrefillTag(null);
         setDiscoveredLocationOverride(null);
@@ -712,6 +745,17 @@ export function AssetTable({
       setFindDialogOpen(false);
       recordLocationVisit(locationNorm);
       setPathVersion((v) => v + 1);
+      const prevLoc = prev.location?.trim() || null;
+      if (prevLoc && locationNorm && prevLoc !== locationNorm) {
+        recordScanActivity({
+          type: "relocate",
+          location: locationNorm,
+          fromLocation: prevLoc,
+        });
+      } else {
+        recordScanActivity({ type: "scan", location: locationNorm });
+      }
+      setActivityVersion((v) => v + 1);
       setToastTitle("Saved");
       setToastMessage("Location updated and row marked scanned.");
       setToastOpen(true);
@@ -849,6 +893,19 @@ export function AssetTable({
         .in("id", targetIds);
       if (error) throw error;
 
+      const locForActivity =
+        locationFilter === LOCATION_FILTER_UNSET
+          ? null
+          : locationFilter === LOCATION_FILTER_ALL
+            ? null
+            : locationFilter;
+      recordScanActivity({
+        type: "scan",
+        location: locForActivity,
+        count: targetIds.length,
+      });
+      setActivityVersion((v) => v + 1);
+
       setToastMessage(
         `Woohoo! Marked ${targetIds.length} system(s) scanned for ${selectedLocationLabel}.`
       );
@@ -870,8 +927,108 @@ export function AssetTable({
     bulkScanning,
     filteredPendingAssets,
     inventoryRows,
+    locationFilter,
     locationFilterActive,
     selectedLocationLabel,
+  ]);
+
+  const handleBulkNotFoundLocation = useCallback(async () => {
+    if (!locationFilterActive || filteredPendingAssets.length === 0 || bulkScanning) return;
+
+    const userNow = userRef.current;
+    if (!userNow) return;
+
+    const targetIds = filteredPendingAssets.map((asset) => asset.id);
+    const targetSet = new Set(targetIds);
+    const nowIso = new Date().toISOString();
+    const prevRows = inventoryRows
+      .filter((row) => targetSet.has(row.id))
+      .map((row) => ({ ...row }));
+    const prevById = new Map(prevRows.map((r) => [r.id, r] as const));
+
+    setBulkScanning(true);
+    setMutationError(null);
+    setShowFinishLocationAlert(false);
+
+    setInventoryRows((curr) =>
+      sortInventoryRows(
+        curr.map((r) =>
+          targetSet.has(r.id)
+            ? {
+                ...r,
+                scan_status: "not_found",
+                inventory_status: INVENTORY_STATUS_NOT_FOUND,
+                scanned_by: userNow,
+                scanned_at: nowIso,
+              }
+            : r
+        )
+      )
+    );
+
+    try {
+      const sb = getSupabaseBrowserClient();
+      const { error } = await sb
+        .from("inventory_items")
+        .update({
+          scan_status: "not_found",
+          inventory_status: INVENTORY_STATUS_NOT_FOUND,
+          scanned_by: userNow,
+          scanned_at: nowIso,
+        })
+        .in("id", targetIds);
+      if (error) throw error;
+
+      const locForActivity =
+        locationFilter === LOCATION_FILTER_UNSET || locationFilter === LOCATION_FILTER_ALL
+          ? null
+          : locationFilter;
+      recordScanActivity({
+        type: "not_found",
+        location: locForActivity,
+        count: targetIds.length,
+      });
+      setActivityVersion((v) => v + 1);
+
+      setToastTitle("Marked not found");
+      setToastMessage(
+        `${targetIds.length} device(s) marked not found for ${selectedLocationLabel}.`
+      );
+      setToastOpen(true);
+    } catch (e) {
+      setInventoryRows((curr) =>
+        sortInventoryRows(curr.map((r) => (targetSet.has(r.id) ? prevById.get(r.id) ?? r : r)))
+      );
+      const msg =
+        e instanceof Error
+          ? e.message
+          : "Could not mark not found for this location. Please try again.";
+      setMutationError(msg);
+    } finally {
+      setBulkScanning(false);
+    }
+  }, [
+    bulkScanning,
+    filteredPendingAssets,
+    inventoryRows,
+    locationFilter,
+    locationFilterActive,
+    selectedLocationLabel,
+  ]);
+
+  const handleLeaveRoomForLater = useCallback(() => {
+    setShowFinishLocationAlert(false);
+    setLocationFilterAndClearRoomSearch(LOCATION_FILTER_ALL);
+    setToastTitle("Left for later");
+    setToastMessage(
+      `${filteredPendingCount} pending device(s) stay in queue for ${selectedLocationLabel}.`
+    );
+    setToastOpen(true);
+    queueMicrotask(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+  }, [
+    filteredPendingCount,
+    selectedLocationLabel,
+    setLocationFilterAndClearRoomSearch,
   ]);
 
   const handleReturnLocationToQueue = useCallback(async () => {
@@ -971,6 +1128,8 @@ export function AssetTable({
         mode="scan"
         onDismiss={() => setShowFinishLocationAlert(false)}
         onConfirm={() => void handleFinishLocation()}
+        onMarkNotFound={() => void handleBulkNotFoundLocation()}
+        onLeaveForLater={handleLeaveRoomForLater}
       />
       <FinishLocationAlert
         open={showReturnLocationAlert}
@@ -1079,6 +1238,14 @@ export function AssetTable({
           >
             {realtimeIssue}
           </section>
+        ) : null}
+
+        {!loading && !loadError && counts.total > 0 && inventoryView === "analytics" ? (
+          <InventoryAnalyticsView
+            inventoryRows={inventoryRows}
+            activityVersion={activityVersion}
+            onBack={() => setInventoryView("queue")}
+          />
         ) : null}
 
         {!loading && !loadError && counts.total > 0 && inventoryView === "scanned" ? (
@@ -1242,7 +1409,7 @@ export function AssetTable({
               )}
             </div>
 
-            {/* Look up first — on PC: full-width bar + actions in one row */}
+            {/* Look up first — primary work surface */}
             {hasSupabaseConfig() ? (
               <section
                 aria-labelledby="lookup-heading"
@@ -1350,6 +1517,21 @@ export function AssetTable({
                       </Button>
                     )}
                   </div>
+                </div>
+                <div className="mt-2 flex justify-end border-t border-teal-400/15 pt-2">
+                  <button
+                    type="button"
+                    onClick={openAnalyticsView}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-teal-200/70 transition-colors hover:bg-teal-950/40 hover:text-teal-50"
+                  >
+                    <BarChart3Icon className="size-3.5 opacity-80" aria-hidden />
+                    Analytics
+                    {insightNoteCount > 0 ? (
+                      <span className="rounded-md bg-amber-500/25 px-1.5 py-0.5 text-[0.6rem] font-semibold tabular-nums text-amber-100">
+                        {insightNoteCount}
+                      </span>
+                    ) : null}
+                  </button>
                 </div>
               </section>
             ) : null}

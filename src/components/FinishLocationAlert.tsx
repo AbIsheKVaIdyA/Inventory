@@ -1,7 +1,12 @@
 "use client";
 
 import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { CheckCheckIcon, Loader2Icon, RotateCcwIcon } from "lucide-react";
+import {
+  CheckCheckIcon,
+  Loader2Icon,
+  RotateCcwIcon,
+  SearchXIcon,
+} from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -14,6 +19,10 @@ type FinishLocationAlertProps = {
   mode: "scan" | "unscan";
   onDismiss: () => void;
   onConfirm: () => void;
+  /** Bulk room assist — mark remaining as not found */
+  onMarkNotFound?: () => void;
+  /** Leave remaining pending and clear room filter */
+  onLeaveForLater?: () => void;
 };
 
 export function FinishLocationAlert({
@@ -24,8 +33,12 @@ export function FinishLocationAlert({
   mode,
   onDismiss,
   onConfirm,
+  onMarkNotFound,
+  onLeaveForLater,
 }: FinishLocationAlertProps) {
   const isScan = mode === "scan";
+  const showAssist = isScan && Boolean(onMarkNotFound || onLeaveForLater);
+
   return (
     <AlertDialog.Root
       open={open}
@@ -45,7 +58,7 @@ export function FinishLocationAlert({
           <AlertDialog.Popup
             initialFocus={true}
             className={cn(
-              "w-full max-w-[min(calc(100vw-1.5rem),22rem)] rounded-3xl border border-border/90 bg-card/98 p-5 shadow-2xl shadow-black/50 ring-1 ring-white/[0.08] backdrop-blur-xl sm:p-6",
+              "w-full max-w-[min(calc(100vw-1.5rem),24rem)] rounded-3xl border border-border/90 bg-card/98 p-5 shadow-2xl shadow-black/50 ring-1 ring-white/[0.08] backdrop-blur-xl sm:p-6",
               "transition-[opacity,transform] duration-200 ease-out",
               "[&[data-starting-style]]:translate-y-3 [&[data-starting-style]]:scale-[0.96] [&[data-starting-style]]:opacity-0",
               "[&[data-ending-style]]:scale-[0.98] [&[data-ending-style]]:opacity-0"
@@ -66,16 +79,33 @@ export function FinishLocationAlert({
               )}
             </div>
             <AlertDialog.Title className="text-center text-lg font-semibold tracking-tight text-foreground">
-              {isScan ? "Finish this location?" : "Undo this location?"}
+              {isScan
+                ? showAssist
+                  ? "Wrap up this room?"
+                  : "Finish this location?"
+                : "Undo this location?"}
             </AlertDialog.Title>
             <AlertDialog.Description className="mt-2 text-center text-sm leading-relaxed text-muted-foreground">
-              This will{" "}
-              <span className="font-semibold text-foreground">
-                {isScan ? "mark scanned" : "return to queue"}
-              </span>{" "}
-              for all{" "}
-              <span className="font-semibold text-foreground tabular-nums">{affectedCount}</span>{" "}
-              system(s) in <span className="font-semibold text-foreground">{locationLabel}</span>.
+              {isScan && showAssist ? (
+                <>
+                  <span className="font-semibold tabular-nums text-foreground">
+                    {affectedCount}
+                  </span>{" "}
+                  device{affectedCount === 1 ? "" : "s"} still pending in{" "}
+                  <span className="font-semibold text-foreground">{locationLabel}</span>. Choose one
+                  action:
+                </>
+              ) : (
+                <>
+                  This will{" "}
+                  <span className="font-semibold text-foreground">
+                    {isScan ? "mark scanned" : "return to queue"}
+                  </span>{" "}
+                  for all{" "}
+                  <span className="font-semibold text-foreground tabular-nums">{affectedCount}</span>{" "}
+                  system(s) in <span className="font-semibold text-foreground">{locationLabel}</span>.
+                </>
+              )}
             </AlertDialog.Description>
             <div className="mt-6 flex flex-col gap-2">
               <Button
@@ -110,6 +140,40 @@ export function FinishLocationAlert({
                   </>
                 )}
               </Button>
+
+              {showAssist && onMarkNotFound ? (
+                <Button
+                  type="button"
+                  size="lg"
+                  disabled={busy}
+                  variant="outline"
+                  className="h-12 w-full gap-2 rounded-2xl border-violet-400/40 bg-violet-950/30 text-violet-50 hover:bg-violet-950/50"
+                  onClick={() => {
+                    if (busy) return;
+                    onMarkNotFound();
+                  }}
+                >
+                  <SearchXIcon className="size-4" aria-hidden />
+                  Mark all not found
+                </Button>
+              ) : null}
+
+              {showAssist && onLeaveForLater ? (
+                <Button
+                  type="button"
+                  size="lg"
+                  disabled={busy}
+                  variant="outline"
+                  className="h-12 w-full rounded-2xl"
+                  onClick={() => {
+                    if (busy) return;
+                    onLeaveForLater();
+                  }}
+                >
+                  Leave for later
+                </Button>
+              ) : null}
+
               <AlertDialog.Close
                 disabled={busy}
                 type="button"

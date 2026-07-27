@@ -56,6 +56,43 @@ export function recordLocationVisit(location: string | null | undefined) {
   writeState(state);
 }
 
+export function getMostRecentLocation(): string | null {
+  return readState().recent[0] ?? null;
+}
+
+export type WhereSuggestReason = "filter" | "on_file" | "recent";
+
+export type WhereSuggestion = {
+  location: string;
+  reason: WhereSuggestReason;
+};
+
+/**
+ * Auto-pick “Where is it now?”:
+ * 1) active room filter, 2) location on the worksheet row, 3) most recent room you used.
+ */
+export function suggestWhereIsItNow(args: {
+  preferredFilter: string | null;
+  rowLocation: string | null | undefined;
+}): WhereSuggestion | null {
+  const filter = args.preferredFilter?.trim() ?? "";
+  if (filter) return { location: filter, reason: "filter" };
+
+  const onFile = args.rowLocation?.trim() ?? "";
+  if (onFile) return { location: onFile, reason: "on_file" };
+
+  const recent = getMostRecentLocation();
+  if (recent) return { location: recent, reason: "recent" };
+
+  return null;
+}
+
+export function whereSuggestLabel(reason: WhereSuggestReason): string {
+  if (reason === "filter") return "From room you’re working in";
+  if (reason === "on_file") return "From location on file";
+  return "From your recent rooms";
+}
+
 /**
  * Suggest next rooms: strongest transitions from current, then other recent rooms
  * that still appear in `available` (pending location options).
