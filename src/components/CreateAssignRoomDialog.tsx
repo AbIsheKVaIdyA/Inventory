@@ -16,7 +16,6 @@ import {
   buildingChipsFromLocations,
   distinctLocationsFromRows,
   findMatchingLocation,
-  getCreatedRooms,
 } from "@/lib/location-rooms";
 import { cn } from "@/lib/utils";
 
@@ -79,8 +78,6 @@ function CreateAssignRoomForm({
     () => buildingChipsFromLocations(existingLocations),
     [existingLocations]
   );
-
-  const createdRooms = useMemo(() => getCreatedRooms(), []);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -268,31 +265,6 @@ function CreateAssignRoomForm({
                   Continue — move devices here
                 </Button>
               </div>
-            </div>
-          ) : null}
-
-          {createdRooms.length > 0 ? (
-            <div className="rounded-2xl border border-violet-400/25 bg-violet-950/20 px-3 py-3">
-              <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-violet-200/90">
-                Newly created rooms
-              </p>
-              <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto">
-                {createdRooms.map((r) => (
-                  <li key={`${r.name}-${r.at}`}>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        setRoomName(r.name);
-                        setExistingRoom(findMatchingLocation(r.name, existingLocations));
-                      }}
-                      className="w-full truncate rounded-lg px-2 py-1.5 text-left text-sm font-medium text-violet-50 hover:bg-violet-950/50"
-                    >
-                      {r.name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
             </div>
           ) : null}
 

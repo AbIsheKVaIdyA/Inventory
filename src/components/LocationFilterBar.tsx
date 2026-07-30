@@ -129,8 +129,7 @@ export function LocationFilterBar({
           </p>
           <p className="mt-0.5 text-base font-semibold text-foreground">Pick a room</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Choose one room to see its device list. Or use Look up to find one device by tag or
-            serial.
+            Only rooms still in progress. Done rooms are under Done rooms below.
           </p>
         </div>
       </div>
@@ -202,7 +201,8 @@ export function LocationFilterBar({
         </details>
       ) : (
         <p className="mt-3 rounded-xl bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
-          No rooms in the file yet. Use Room to create one, or Add new with a location.
+          No rooms left to pick — all are marked done, or none are in the file yet. Open Done
+          rooms to reopen one, or use Room to create.
         </p>
       )}
     </div>

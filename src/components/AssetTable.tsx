@@ -4,6 +4,7 @@ import {
   ArrowLeftIcon,
   BarChart3Icon,
   CheckCheckIcon,
+  CheckCircle2Icon,
   DoorOpenIcon,
   Loader2Icon,
   PackagePlus,
@@ -33,12 +34,17 @@ import {
   buildLocationFilterOptions,
   distinctLocationPickerOptionsFromRows,
 } from "@/lib/location-filter";
-import {
-  textMatchesQuery,
-} from "@/lib/inventory-search";
+import { textMatchesQuery } from "@/lib/inventory-search";
 import { recordScanActivity, getDailyAnomalies } from "@/lib/scan-activity";
 import { getLastAdd, saveLastAdd } from "@/lib/last-add";
-import { recordCreatedRoom } from "@/lib/location-rooms";
+import {
+  isLocationDone,
+  loadDoneRooms,
+  markRoomDone,
+  unmarkRoomDone,
+  type DoneRoomRecord,
+} from "@/lib/done-rooms";
+import { recordCreatedRoom, findMatchingLocation } from "@/lib/location-rooms";
 import {
   getMostRecentLocation,
   recordLocationVisit,
@@ -52,6 +58,7 @@ import type { Asset } from "@/types/asset";
 import { AssetRow } from "@/components/AssetRow";
 import { InventoryAnalyticsView } from "@/components/InventoryAnalyticsView";
 import { NewCreatedRoomsControl } from "@/components/NewCreatedRoomsControl";
+import { DoneRoomsControl } from "@/components/DoneRoomsControl";
 import { CelebrationToast } from "@/components/CelebrationToast";
 import {
   AddDiscoveredSystemDialog,
@@ -104,6 +111,8 @@ export function AssetTable({
   const [pathVersion, setPathVersion] = useState(0);
   const [activityVersion, setActivityVersion] = useState(0);
   const [roomsVersion, setRoomsVersion] = useState(0);
+  const [doneRoomsVersion, setDoneRoomsVersion] = useState(0);
+  const [doneRooms, setDoneRooms] = useState<DoneRoomRecord[]>([]);
   const [lastAddVersion, setLastAddVersion] = useState(0);
   const [findDialogOpen, setFindDialogOpen] = useState(false);
   const [findDialogMountKey, setFindDialogMountKey] = useState(0);
@@ -148,10 +157,36 @@ export function AssetTable({
     });
   }, [assets]);
 
-  const locationFilterOptions = useMemo(
+  const locationFilterOptionsAll = useMemo(
     () => buildLocationFilterOptions(assets),
     [assets]
   );
+
+  /** Pick a room / switch room: hide rooms marked done (keep current if already open). */
+  const locationFilterOptions = useMemo(() => {
+    const pending = locationFilterOptionsAll.filter((o) => {
+      if (o.value === LOCATION_FILTER_UNSET) return true;
+      return !isLocationDone(o.value, doneRooms);
+    });
+    if (
+      locationFilter !== LOCATION_FILTER_ALL &&
+      !pending.some((o) => o.value === locationFilter)
+    ) {
+      const cur = locationFilterOptionsAll.find((o) => o.value === locationFilter);
+      if (cur) return [cur, ...pending];
+    }
+    return pending;
+  }, [locationFilterOptionsAll, doneRooms, locationFilter]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadDoneRooms().then((list) => {
+      if (!cancelled) setDoneRooms(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [doneRoomsVersion]);
 
   const discoveredLocationOptions = useMemo(
     () => distinctLocationPickerOptionsFromRows(inventoryRows),
@@ -260,6 +295,41 @@ export function AssetTable({
   const locationFilterActive = locationFilter !== LOCATION_FILTER_ALL;
 
   const filteredPendingCount = filteredPendingAssets.length;
+
+  const currentRoomIsDone =
+    locationFilterActive &&
+    locationFilter !== LOCATION_FILTER_UNSET &&
+    isLocationDone(locationFilter, doneRooms);
+
+  const handleMarkRoomDone = useCallback(() => {
+    if (
+      locationFilter === LOCATION_FILTER_ALL ||
+      locationFilter === LOCATION_FILTER_UNSET
+    ) {
+      return;
+    }
+    markRoomDone(locationFilter, scannerEmail);
+    setDoneRoomsVersion((v) => v + 1);
+    setLocationFilterAndClearRoomSearch(LOCATION_FILTER_ALL);
+    setToastTitle("Room done");
+    setToastMessage(`${locationFilter} moved to Done rooms. It won’t show in Pick a room.`);
+    setToastOpen(true);
+  }, [locationFilter, scannerEmail, setLocationFilterAndClearRoomSearch]);
+
+  const handleReopenRoom = useCallback(() => {
+    if (
+      locationFilter === LOCATION_FILTER_ALL ||
+      locationFilter === LOCATION_FILTER_UNSET
+    ) {
+      return;
+    }
+    unmarkRoomDone(locationFilter);
+    setDoneRoomsVersion((v) => v + 1);
+    setToastTitle("Room reopened");
+    setToastMessage(`${locationFilter} is back on Pick a room.`);
+    setToastOpen(true);
+  }, [locationFilter]);
+
   const selectedLocationLabel = useMemo(() => {
     if (locationFilter === LOCATION_FILTER_ALL) return "All locations";
     if (locationFilter === LOCATION_FILTER_UNSET) return "(No location set)";
@@ -638,6 +708,13 @@ export function AssetTable({
         if (locationNorm) {
           recordLocationVisit(locationNorm);
           setPathVersion((v) => v + 1);
+          const knownBefore = inventoryRows
+            .map((r) => r.location?.trim() ?? "")
+            .filter(Boolean);
+          if (!findMatchingLocation(locationNorm, knownBefore)) {
+            recordCreatedRoom(locationNorm, userNow);
+            setRoomsVersion((v) => v + 1);
+          }
         }
         recordScanActivity({ type: "add", location: locationNorm });
         setActivityVersion((v) => v + 1);
@@ -661,7 +738,7 @@ export function AssetTable({
         setDiscoveredSaving(false);
       }
     },
-    []
+    [inventoryRows]
   );
 
   const handleMoveDevicesToRoom = useCallback(
@@ -1609,8 +1686,15 @@ export function AssetTable({
 
             <NewCreatedRoomsControl
               roomsVersion={roomsVersion}
+              inventoryRows={inventoryRows}
               onSelectRoom={(loc) => setLocationFilterAndClearRoomSearch(loc)}
               className="mt-3"
+            />
+            <DoneRoomsControl
+              roomsVersion={doneRoomsVersion}
+              onOpenRoom={(loc) => setLocationFilterAndClearRoomSearch(loc)}
+              onChanged={() => setDoneRoomsVersion((v) => v + 1)}
+              className="mt-2"
             />
 
             {/* PC: room tools + list side by side */}
@@ -1626,6 +1710,29 @@ export function AssetTable({
                   onChange={setLocationFilterAndClearRoomSearch}
                   options={locationFilterOptions}
                 />
+
+                {locationFilterActive && locationFilter !== LOCATION_FILTER_UNSET ? (
+                  currentRoomIsDone ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleReopenRoom}
+                      className="h-11 w-full gap-2 rounded-xl border-emerald-400/40 bg-emerald-950/30 text-emerald-50"
+                    >
+                      <RotateCcwIcon className="size-4 shrink-0" aria-hidden />
+                      Reopen room
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      onClick={handleMarkRoomDone}
+                      className="h-11 w-full gap-2 rounded-xl bg-emerald-700 text-white hover:bg-emerald-600"
+                    >
+                      <CheckCircle2Icon className="size-4 shrink-0" aria-hidden />
+                      Room done
+                    </Button>
+                  )
+                ) : null}
 
                 {nextRoomSuggestions.length > 0 ? (
                   <section aria-label="Suggested next rooms" className="flex flex-col gap-2">
