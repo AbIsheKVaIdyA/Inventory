@@ -37,6 +37,8 @@ import {
   textMatchesQuery,
 } from "@/lib/inventory-search";
 import { recordScanActivity, getDailyAnomalies } from "@/lib/scan-activity";
+import { getLastAdd, saveLastAdd } from "@/lib/last-add";
+import { recordCreatedRoom } from "@/lib/location-rooms";
 import {
   getMostRecentLocation,
   recordLocationVisit,
@@ -49,6 +51,7 @@ import type { Asset } from "@/types/asset";
 
 import { AssetRow } from "@/components/AssetRow";
 import { InventoryAnalyticsView } from "@/components/InventoryAnalyticsView";
+import { NewCreatedRoomsControl } from "@/components/NewCreatedRoomsControl";
 import { CelebrationToast } from "@/components/CelebrationToast";
 import {
   AddDiscoveredSystemDialog,
@@ -83,6 +86,11 @@ export function AssetTable({
   const [discoveredDialogOpen, setDiscoveredDialogOpen] = useState(false);
   const [discoveredFormKey, setDiscoveredFormKey] = useState(0);
   const [discoveredPrefillTag, setDiscoveredPrefillTag] = useState<string | null>(null);
+  const [discoveredPrefillManufacturer, setDiscoveredPrefillManufacturer] = useState<
+    string | null
+  >(null);
+  const [discoveredPrefillModel, setDiscoveredPrefillModel] = useState<string | null>(null);
+  const [discoveredCloneMode, setDiscoveredCloneMode] = useState(false);
   const [discoveredLocationOverride, setDiscoveredLocationOverride] = useState<string | null>(
     null
   );
@@ -95,6 +103,8 @@ export function AssetTable({
   const [findInitialQuery, setFindInitialQuery] = useState<string | null>(null);
   const [pathVersion, setPathVersion] = useState(0);
   const [activityVersion, setActivityVersion] = useState(0);
+  const [roomsVersion, setRoomsVersion] = useState(0);
+  const [lastAddVersion, setLastAddVersion] = useState(0);
   const [findDialogOpen, setFindDialogOpen] = useState(false);
   const [findDialogMountKey, setFindDialogMountKey] = useState(0);
   const [findLookupBusy, setFindLookupBusy] = useState(false);
@@ -199,6 +209,33 @@ export function AssetTable({
     setFindDialogMountKey((k) => k + 1);
     setFindDialogOpen(true);
   }, [lookupDraft]);
+
+  const openAddNewFresh = useCallback(() => {
+    setDiscoveredCloneMode(false);
+    setDiscoveredPrefillTag(null);
+    setDiscoveredPrefillManufacturer(null);
+    setDiscoveredPrefillModel(null);
+    setDiscoveredLocationOverride(null);
+    setDiscoveredFormKey((k) => k + 1);
+    setDiscoveredDialogOpen(true);
+  }, []);
+
+  const openCloneLastAdd = useCallback(() => {
+    const last = getLastAdd();
+    if (!last) return;
+    setDiscoveredCloneMode(true);
+    setDiscoveredPrefillTag(null);
+    setDiscoveredPrefillManufacturer(last.manufacturer || null);
+    setDiscoveredPrefillModel(last.model || null);
+    setDiscoveredLocationOverride(last.location.trim() ? last.location : null);
+    setDiscoveredFormKey((k) => k + 1);
+    setDiscoveredDialogOpen(true);
+  }, []);
+
+  const canCloneLastAdd = useMemo(() => {
+    void lastAddVersion;
+    return getLastAdd() !== null;
+  }, [lastAddVersion]);
 
   const nextRoomSuggestions = useMemo(() => {
     void pathVersion;
@@ -604,8 +641,17 @@ export function AssetTable({
         }
         recordScanActivity({ type: "add", location: locationNorm });
         setActivityVersion((v) => v + 1);
+        saveLastAdd({
+          location: locationNorm ?? "",
+          manufacturer: manufacturerNorm ?? "",
+          model: modelNorm ?? "",
+        });
+        setLastAddVersion((v) => v + 1);
         setDiscoveredDialogOpen(false);
         setDiscoveredPrefillTag(null);
+        setDiscoveredPrefillManufacturer(null);
+        setDiscoveredPrefillModel(null);
+        setDiscoveredCloneMode(false);
         setDiscoveredLocationOverride(null);
       } catch (e) {
         const msg =
@@ -1159,7 +1205,10 @@ export function AssetTable({
         }}
         onConfirmMatch={(id, loc) => void handleLookupConfirm(id, loc)}
         onRequestManualAdd={(prefill) => {
+          setDiscoveredCloneMode(false);
           setDiscoveredPrefillTag(prefill.length > 0 ? prefill : null);
+          setDiscoveredPrefillManufacturer(null);
+          setDiscoveredPrefillModel(null);
           setDiscoveredLocationOverride(null);
           setDiscoveredFormKey((k) => k + 1);
           setDiscoveredDialogOpen(true);
@@ -1172,8 +1221,14 @@ export function AssetTable({
         locationOptions={discoveredLocationOptions}
         preferredLocation={preferredLocationForDiscovered}
         initialTagNumber={discoveredPrefillTag}
+        initialManufacturer={discoveredPrefillManufacturer}
+        initialModel={discoveredPrefillModel}
+        cloneMode={discoveredCloneMode}
         onDismiss={() => {
           setDiscoveredPrefillTag(null);
+          setDiscoveredPrefillManufacturer(null);
+          setDiscoveredPrefillModel(null);
+          setDiscoveredCloneMode(false);
           setDiscoveredLocationOverride(null);
           setDiscoveredDialogOpen(false);
         }}
@@ -1190,8 +1245,9 @@ export function AssetTable({
           setRoomDialogOpen(false);
           setDiscoveredPrefillTag(null);
           setDiscoveredLocationOverride(loc);
-          setDiscoveredFormKey((k) => k + 1);
-          setDiscoveredDialogOpen(true);
+          setFindInitialQuery(null);
+          setFindDialogMountKey((k) => k + 1);
+          setFindDialogOpen(true);
         }}
         onUseRoomOnly={(loc) => {
           setRoomDialogOpen(false);
@@ -1200,6 +1256,10 @@ export function AssetTable({
           setToastMessage(`Filter set to ${loc}. Add or scan devices there.`);
           setToastOpen(true);
           queueMicrotask(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+        }}
+        onRoomCreated={(loc) => {
+          recordCreatedRoom(loc);
+          setRoomsVersion((v) => v + 1);
         }}
       />
       <Header
@@ -1462,21 +1522,32 @@ export function AssetTable({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:w-[22rem] lg:shrink-0 lg:grid-cols-3">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 lg:w-[28rem] lg:shrink-0 lg:grid-cols-4">
                     <Button
                       type="button"
                       variant="outline"
                       disabled={discoveredSaving || findLookupBusy || roomBusy}
-                      onClick={() => {
-                        setDiscoveredPrefillTag(null);
-                        setDiscoveredLocationOverride(null);
-                        setDiscoveredFormKey((k) => k + 1);
-                        setDiscoveredDialogOpen(true);
-                      }}
+                      onClick={openAddNewFresh}
                       className="h-11 gap-1.5 rounded-xl border-cyan-400/35 bg-cyan-950/25 text-cyan-50"
                     >
                       <PackagePlus className="size-4 shrink-0" aria-hidden />
                       Add new
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={
+                        discoveredSaving || findLookupBusy || roomBusy || !canCloneLastAdd
+                      }
+                      title={
+                        canCloneLastAdd
+                          ? "Reuse last brand, model, and room — enter a new tag"
+                          : "Add a device once to enable clone"
+                      }
+                      onClick={openCloneLastAdd}
+                      className="h-11 gap-1.5 rounded-xl border-amber-400/35 bg-amber-950/25 text-amber-50 disabled:opacity-40"
+                    >
+                      Clone last
                     </Button>
                     <Button
                       type="button"
@@ -1496,7 +1567,7 @@ export function AssetTable({
                         type="button"
                         onClick={() => setShowFinishLocationAlert(true)}
                         disabled={bulkScanning || bulkUnscanning}
-                        className="col-span-2 h-11 gap-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 sm:col-span-1"
+                        className="h-11 gap-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500"
                       >
                         {bulkScanning ? (
                           <Loader2Icon className="size-4 animate-spin" aria-hidden />
@@ -1511,7 +1582,7 @@ export function AssetTable({
                         variant="outline"
                         disabled={!canOpenScannedView}
                         onClick={() => openScannedView()}
-                        className="col-span-2 h-11 rounded-xl border-border bg-card/50 sm:col-span-1"
+                        className="h-11 rounded-xl border-border bg-card/50"
                       >
                         View done
                       </Button>
@@ -1536,7 +1607,13 @@ export function AssetTable({
               </section>
             ) : null}
 
-            {/* PC: room tools + list side by side — more options visible, not bigger chrome */}
+            <NewCreatedRoomsControl
+              roomsVersion={roomsVersion}
+              onSelectRoom={(loc) => setLocationFilterAndClearRoomSearch(loc)}
+              className="mt-3"
+            />
+
+            {/* PC: room tools + list side by side */}
             <div
               className={cn(
                 "flex flex-col gap-4",

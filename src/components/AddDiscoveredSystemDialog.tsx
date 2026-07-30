@@ -5,6 +5,13 @@ import { Loader2Icon, PackagePlus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  applyModelLine,
+  applyModelNumber,
+  MANUFACTURER_PRESETS,
+  MODEL_LINE_PRESETS,
+  MODEL_NUMBER_PRESETS,
+} from "@/lib/device-presets";
 
 import { cn } from "@/lib/utils";
 
@@ -37,6 +44,12 @@ type AddDiscoveredSystemDialogProps = {
   preferredLocation: string | null;
   /** Prefill tag number when opening from Look up with no match */
   initialTagNumber?: string | null;
+  /** Prefill brand when cloning last add */
+  initialManufacturer?: string | null;
+  /** Prefill model when cloning last add */
+  initialModel?: string | null;
+  /** Show clone hint in the form */
+  cloneMode?: boolean;
   onDismiss: () => void;
   onSave: (payload: DiscoveredSystemPayload) => void;
 };
@@ -63,6 +76,9 @@ type FormProps = {
   locationOptions: LocationPickerOption[];
   preferredLocation: string | null;
   initialTagNumber?: string | null;
+  initialManufacturer?: string | null;
+  initialModel?: string | null;
+  cloneMode?: boolean;
   onSave: (payload: DiscoveredSystemPayload) => void;
 };
 
@@ -71,6 +87,9 @@ function AddDiscoveredSystemForm({
   locationOptions,
   preferredLocation,
   initialTagNumber,
+  initialManufacturer,
+  initialModel,
+  cloneMode,
   onSave,
 }: FormProps) {
   const initial = deriveInitialSelect(preferredLocation, locationOptions);
@@ -79,8 +98,12 @@ function AddDiscoveredSystemForm({
   const [tagNumber, setTagNumber] = useState(() =>
     initialTagNumber?.trim() ? initialTagNumber.trim() : ""
   );
-  const [manufacturer, setManufacturer] = useState("");
-  const [model, setModel] = useState("");
+  const [manufacturer, setManufacturer] = useState(() =>
+    initialManufacturer?.trim() ? initialManufacturer.trim() : ""
+  );
+  const [model, setModel] = useState(() =>
+    initialModel?.trim() ? initialModel.trim() : ""
+  );
   const [formError, setFormError] = useState<string | null>(null);
 
   function submit(e: FormEvent) {
@@ -117,10 +140,12 @@ function AddDiscoveredSystemForm({
         <PackagePlus className="size-6" aria-hidden />
       </div>
       <AlertDialog.Title className="text-center text-lg font-semibold tracking-tight text-foreground">
-        Add new device
+        {cloneMode ? "Clone last add" : "Add new device"}
       </AlertDialog.Title>
       <AlertDialog.Description className="mt-2 text-center text-sm leading-relaxed text-muted-foreground">
-        Hardware missing from the import. Saved as scanned at the location you pick.
+        {cloneMode
+          ? "Brand, model, and room are filled from your last add — enter the new tag number."
+          : "Hardware missing from the import. Saved as scanned at the location you pick."}
       </AlertDialog.Description>
 
       <form className="mt-5 flex flex-col gap-4" onSubmit={(e) => void submit(e)}>
@@ -173,7 +198,7 @@ function AddDiscoveredSystemForm({
                 value={locationCustom}
                 onChange={(e) => setLocationCustom(e.target.value)}
                 className={fieldClass}
-                placeholder="e.g. ECSS 3.502"
+                placeholder="e.g. ECS 3.502"
               />
             </label>
           ) : null}
@@ -204,6 +229,27 @@ function AddDiscoveredSystemForm({
           </legend>
           <label className="flex flex-col gap-1.5">
             <span className={labelClass}>Brand (manufacturer)</span>
+            <div className="flex flex-wrap gap-1.5">
+              {MANUFACTURER_PRESETS.map((brand) => {
+                const active = manufacturer.toLowerCase() === brand.toLowerCase();
+                return (
+                  <button
+                    key={brand}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setManufacturer(brand)}
+                    className={cn(
+                      "h-8 rounded-lg border px-2.5 text-xs font-medium transition-colors",
+                      active
+                        ? "border-cyan-400/55 bg-cyan-950/50 text-cyan-50"
+                        : "border-border bg-background/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    {brand}
+                  </button>
+                );
+              })}
+            </div>
             <input
               type="text"
               enterKeyHint="next"
@@ -212,12 +258,71 @@ function AddDiscoveredSystemForm({
               value={manufacturer}
               onChange={(e) => setManufacturer(e.target.value)}
               className={fieldClass}
-              placeholder="e.g. Dell, HP, Lenovo"
+              placeholder="Or type brand…"
             />
           </label>
 
           <label className="flex flex-col gap-1.5">
             <span className={labelClass}>System type (model)</span>
+            <p className="text-[0.65rem] text-muted-foreground">
+              Tap a line, then a number — or type freely.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {MODEL_LINE_PRESETS.map((line) => {
+                const active = model.toLowerCase().startsWith(line.toLowerCase());
+                return (
+                  <button
+                    key={line}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setModel((prev) => applyModelLine(prev, line));
+                      if (line === "OptiPlex" || line === "Precision" || line === "Latitude" || line === "XPS") {
+                        setManufacturer((m) => (m.trim() ? m : "Dell"));
+                      }
+                      if (line.startsWith("Think")) {
+                        setManufacturer((m) => (m.trim() ? m : "Lenovo"));
+                      }
+                      if (line === "EliteDesk" || line === "ProDesk") {
+                        setManufacturer((m) => (m.trim() ? m : "HP"));
+                      }
+                      if (line === "Mac mini" || line === "iMac") {
+                        setManufacturer((m) => (m.trim() ? m : "Apple"));
+                      }
+                    }}
+                    className={cn(
+                      "h-8 rounded-lg border px-2.5 text-xs font-medium transition-colors",
+                      active
+                        ? "border-teal-400/55 bg-teal-950/50 text-teal-50"
+                        : "border-border bg-background/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    {line}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {MODEL_NUMBER_PRESETS.map((num) => {
+                const active = new RegExp(`\\b${num}\\b`, "i").test(model);
+                return (
+                  <button
+                    key={num}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setModel((prev) => applyModelNumber(prev, num))}
+                    className={cn(
+                      "h-8 rounded-lg border px-2 text-xs font-mono font-medium transition-colors",
+                      active
+                        ? "border-violet-400/55 bg-violet-950/45 text-violet-50"
+                        : "border-border bg-background/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    {num}
+                  </button>
+                );
+              })}
+            </div>
             <input
               type="text"
               enterKeyHint="done"
@@ -226,7 +331,7 @@ function AddDiscoveredSystemForm({
               value={model}
               onChange={(e) => setModel(e.target.value)}
               className={fieldClass}
-              placeholder="e.g. Latitude 5540"
+              placeholder="e.g. OptiPlex 9020"
             />
           </label>
         </fieldset>
@@ -271,6 +376,9 @@ export function AddDiscoveredSystemDialog({
   locationOptions,
   preferredLocation,
   initialTagNumber,
+  initialManufacturer,
+  initialModel,
+  cloneMode,
   onDismiss,
   onSave,
 }: AddDiscoveredSystemDialogProps) {
@@ -301,11 +409,14 @@ export function AddDiscoveredSystemDialog({
           >
             {open ? (
               <AddDiscoveredSystemForm
-                key={`${formMountKey}-${initialTagNumber ?? ""}-${preferredLocation ?? ""}`}
+                key={`${formMountKey}-${initialTagNumber ?? ""}-${preferredLocation ?? ""}-${initialManufacturer ?? ""}-${initialModel ?? ""}-${cloneMode ? "c" : "n"}`}
                 busy={busy}
                 locationOptions={locationOptions}
                 preferredLocation={preferredLocation}
                 initialTagNumber={initialTagNumber}
+                initialManufacturer={initialManufacturer}
+                initialModel={initialModel}
+                cloneMode={cloneMode}
                 onSave={onSave}
               />
             ) : null}

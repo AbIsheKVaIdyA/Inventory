@@ -102,7 +102,7 @@ export function InventoryAnalyticsView({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartCard
           title="Where (building)"
-          subtitle="ECSS / ECSN / ECSW and other prefixes"
+          subtitle="Prefixes taken from locations on file"
         >
           {stats.byBuilding.length === 0 ? (
             <EmptyChart />

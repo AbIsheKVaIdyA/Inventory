@@ -65,13 +65,16 @@ function inRange(iso: string | null | undefined, from: Date | null, to: Date): b
 }
 
 /**
- * Extract building / wing prefix: ECSS, ECSN, ECSW, ECSE, ECS, or first token.
+ * Building / wing prefix from a location string.
+ * ECS and ECSS both map to ECS (this inventory uses ECS).
+ * Keeps ECSW / ECSN / ECSE distinct when present.
  */
 export function buildingFromLocation(location: string | null | undefined): string {
   const raw = location?.trim() ?? "";
   if (!raw) return "Unset";
-  const ecs = raw.match(/^(ECS[A-Z]?)\b/i);
-  if (ecs) return ecs[1]!.toUpperCase();
+  const wing = raw.match(/^(ECSW|ECSN|ECSE)\b/i);
+  if (wing) return wing[1]!.toUpperCase();
+  if (/^ECSS?\b/i.test(raw)) return "ECS";
   const token = raw.split(/[\s\-_/]+/)[0]?.trim() ?? "";
   if (!token) return "Other";
   if (token.length <= 8 && /^[A-Za-z0-9]+$/.test(token)) return token.toUpperCase();

@@ -8,7 +8,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { displayLabelFromInventory, type InventoryItemRow } from "@/lib/inventory-map";
 import {
   inventorySearchMinQueryLength,
-  searchInventoryWorksheetHits,
+  searchInventoryExactIdentity,
   type InventorySearchHit,
 } from "@/lib/inventory-search";
 import type { LocationPickerOption } from "@/lib/location-filter";
@@ -70,7 +70,7 @@ export function SerialLookupDialog({
   const seed = initialQuery?.trim() ?? "";
   const seededHits =
     seed.length >= inventorySearchMinQueryLength()
-      ? searchInventoryWorksheetHits(inventoryRows, seed)
+      ? searchInventoryExactIdentity(inventoryRows, seed)
       : null;
   const seededLoc = deriveInitialSelect(preferredLocation, locationOptions);
 
@@ -122,7 +122,7 @@ export function SerialLookupDialog({
     }
     setQuery(q);
     setLastSearch(q);
-    setHits(searchInventoryWorksheetHits(inventoryRows, q));
+    setHits(searchInventoryExactIdentity(inventoryRows, q));
     setSelectedId(null);
     applyWhereSuggestion(null);
   }
@@ -158,8 +158,6 @@ export function SerialLookupDialog({
     onRequestManualAdd(prefill);
   }
 
-  const exactHits = hits?.filter((h) => !h.fuzzy) ?? [];
-  const fuzzyHits = hits?.filter((h) => h.fuzzy) ?? [];
   const resultList = hits ?? [];
 
   return (
@@ -197,7 +195,8 @@ export function SerialLookupDialog({
               Look up device
             </AlertDialog.Title>
             <AlertDialog.Description className="mt-2 text-center text-sm leading-relaxed text-muted-foreground">
-              Start here: enter a tag number. Match it, or add it as new with the same number.
+              Enter the exact tag number. If it&apos;s on the list, confirm it. If not, add it as new
+              with that tag.
             </AlertDialog.Description>
 
             <div className="mt-4 flex flex-col gap-3">
@@ -242,12 +241,11 @@ export function SerialLookupDialog({
                   {resultList.length === 0 ? (
                     <div className="rounded-2xl border border-amber-500/35 bg-amber-950/30 px-4 py-4 text-center">
                       <p className="text-sm font-medium text-amber-50">
-                        No worksheet row matched{" "}
+                        No exact match for{" "}
                         <span className="font-mono text-amber-100">“{lastSearch}”</span>.
                       </p>
                       <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
-                        If this is new equipment not on the import, add it — your search stays as the
-                        tag number.
+                        Add it as a new device — the tag number is filled in for you.
                       </p>
                       <Button
                         type="button"
@@ -259,16 +257,10 @@ export function SerialLookupDialog({
                     </div>
                   ) : (
                     <>
-                      {fuzzyHits.length > 0 && exactHits.length === 0 ? (
-                        <p className="text-xs font-semibold uppercase tracking-wide text-amber-200/90">
-                          Close matches (typo-tolerant) — tap one
-                        </p>
-                      ) : (
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          {resultList.length} match{resultList.length === 1 ? "" : "es"}
-                          {fuzzyHits.length > 0 ? " · includes close matches" : ""} — tap one
-                        </p>
-                      )}
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {resultList.length} exact match{resultList.length === 1 ? "" : "es"} — tap
+                        one
+                      </p>
                       <ul className="max-h-48 space-y-2 overflow-y-auto pr-0.5 sm:max-h-56">
                         {resultList.map((h) => {
                           const r = h.row;
@@ -301,15 +293,8 @@ export function SerialLookupDialog({
                                     : "border-border bg-background/50 hover:bg-muted/50"
                                 )}
                               >
-                                <span className="flex items-center gap-2">
-                                  <span className="font-mono font-semibold text-foreground">
-                                    {label}
-                                  </span>
-                                  {h.fuzzy ? (
-                                    <span className="rounded-md bg-amber-500/20 px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wide text-amber-100">
-                                      Close
-                                    </span>
-                                  ) : null}
+                                <span className="font-mono font-semibold text-foreground">
+                                  {label}
                                 </span>
                                 {idLine ? (
                                   <span className="mt-0.5 block font-mono text-[0.65rem] leading-snug text-muted-foreground">

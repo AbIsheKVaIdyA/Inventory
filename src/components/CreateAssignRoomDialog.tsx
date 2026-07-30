@@ -6,16 +6,19 @@ import {
   DoorOpenIcon,
   Loader2Icon,
   MapPinPlusIcon,
-  PackagePlus,
   SearchIcon,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { displayLabelFromInventory, type InventoryItemRow } from "@/lib/inventory-map";
+import {
+  buildingChipsFromLocations,
+  distinctLocationsFromRows,
+  findMatchingLocation,
+  getCreatedRooms,
+} from "@/lib/location-rooms";
 import { cn } from "@/lib/utils";
-
-const BUILDING_CHIPS = ["ECSW", "ECSN", "ECSS"] as const;
 
 const fieldClass =
   "min-h-[3rem] w-full rounded-2xl border border-border bg-background/80 px-4 text-base outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
@@ -28,10 +31,12 @@ type CreateAssignRoomDialogProps = {
   onDismiss: () => void;
   /** Update location for selected device ids, then focus filter on that room. */
   onMoveDevices: (location: string, deviceIds: string[]) => void;
-  /** Close and open Add new with this location prefilled. */
+  /** Close and open Look up (match or add new) with this room as preferred location. */
   onAddNewInRoom: (location: string) => void;
   /** Focus location filter on this room without moving devices. */
   onUseRoomOnly: (location: string) => void;
+  /** Fired when operator introduces a room name that was not already on file. */
+  onRoomCreated?: (location: string) => void;
 };
 
 function rowSearchBlob(row: InventoryItemRow): string {
@@ -54,14 +59,28 @@ function CreateAssignRoomForm({
   onMoveDevices,
   onAddNewInRoom,
   onUseRoomOnly,
+  onRoomCreated,
 }: Omit<CreateAssignRoomDialogProps, "open" | "formMountKey" | "onDismiss">) {
   const [roomName, setRoomName] = useState("");
   const [step, setStep] = useState<"name" | "assign">("name");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [formError, setFormError] = useState<string | null>(null);
+  const [existingRoom, setExistingRoom] = useState<string | null>(null);
 
   const resolvedRoom = roomName.trim();
+
+  const existingLocations = useMemo(
+    () => distinctLocationsFromRows(inventoryRows),
+    [inventoryRows]
+  );
+
+  const buildingChips = useMemo(
+    () => buildingChipsFromLocations(existingLocations),
+    [existingLocations]
+  );
+
+  const createdRooms = useMemo(() => getCreatedRooms(), []);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -73,19 +92,35 @@ function CreateAssignRoomForm({
   }, [inventoryRows, query]);
 
   const applyBuildingChip = (building: string) => {
+    setExistingRoom(null);
     setRoomName((prev) => {
       const t = prev.trim();
       if (!t) return `${building} `;
-      const replaced = t.replace(/^(ECSW|ECSN|ECSS)\s*/i, "");
+      // Strip any known ECS* prefix (longer first) before applying the chip.
+      const replaced = t.replace(/^(?:ECSW|ECSN|ECSE|ECSS|ECS)\s*/i, "");
       return `${building} ${replaced}`.trimStart();
     });
   };
 
+  const markCreatedIfNew = (loc: string) => {
+    if (!findMatchingLocation(loc, existingLocations)) {
+      onRoomCreated?.(loc);
+    }
+  };
+
   const goAssign = () => {
     if (!resolvedRoom) {
-      setFormError("Enter a room name (e.g. ECSS 3.502).");
+      setFormError("Enter a room name (same format as Location on the list).");
       return;
     }
+    const match = findMatchingLocation(resolvedRoom, existingLocations);
+    if (match) {
+      setExistingRoom(match);
+      setRoomName(match);
+      setFormError(null);
+      return;
+    }
+    setExistingRoom(null);
     setFormError(null);
     setStep("assign");
   };
@@ -106,6 +141,7 @@ function CreateAssignRoomForm({
       return;
     }
     setFormError(null);
+    markCreatedIfNew(resolvedRoom);
     onMoveDevices(resolvedRoom, [...selected]);
   };
 
@@ -119,7 +155,7 @@ function CreateAssignRoomForm({
       </AlertDialog.Title>
       <AlertDialog.Description className="mt-2 text-center text-sm leading-relaxed text-muted-foreground">
         {step === "name"
-          ? "Name a room that is not on the list yet. Then move existing devices here, add a new one, or just focus the queue on it."
+          ? "Use the same building prefix as locations already on file. If the room exists, we’ll mark it."
           : `Room: ${resolvedRoom}. Tap devices to select, then move them here.`}
       </AlertDialog.Description>
 
@@ -136,21 +172,27 @@ function CreateAssignRoomForm({
         <div className="mt-5 flex flex-col gap-4">
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Quick building
+              Buildings on file
             </p>
-            <div className="flex flex-wrap gap-2">
-              {BUILDING_CHIPS.map((b) => (
-                <button
-                  key={b}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => applyBuildingChip(b)}
-                  className="h-10 rounded-xl border border-violet-400/35 bg-violet-950/40 px-3 text-sm font-semibold text-violet-50 touch-manipulation hover:bg-violet-950/60"
-                >
-                  {b}
-                </button>
-              ))}
-            </div>
+            {buildingChips.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Type the room as it appears on file (e.g. ECS 3.502).
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {buildingChips.map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => applyBuildingChip(b)}
+                    className="h-10 rounded-xl border border-violet-400/35 bg-violet-950/40 px-3 text-sm font-semibold text-violet-50 touch-manipulation hover:bg-violet-950/60"
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <label className="flex flex-col gap-1.5">
@@ -163,7 +205,10 @@ function CreateAssignRoomForm({
               autoComplete="off"
               disabled={busy}
               value={roomName}
-              onChange={(e) => setRoomName(e.target.value)}
+              onChange={(e) => {
+                setExistingRoom(null);
+                setRoomName(e.target.value);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -171,12 +216,85 @@ function CreateAssignRoomForm({
                 }
               }}
               className={fieldClass}
-              placeholder="e.g. ECSS 3.502"
+              placeholder={
+                buildingChips[0] ? `e.g. ${buildingChips[0]} 3.502` : "e.g. ECS 3.502"
+              }
             />
             <span className="text-[0.7rem] leading-snug text-muted-foreground">
-              Same value as the Location column / filter.
+              Must match Location column spelling (chips use prefixes already in your file).
             </span>
           </label>
+
+          {existingRoom ? (
+            <div
+              role="status"
+              className="rounded-2xl border border-amber-500/40 bg-amber-950/35 px-4 py-3 text-sm"
+            >
+              <p className="font-semibold text-amber-50">Room already exists</p>
+              <p className="mt-1 text-xs leading-relaxed text-amber-100/85">
+                On file as{" "}
+                <span className="font-mono font-semibold text-amber-50">{existingRoom}</span>. Don’t
+                create a duplicate — open it or assign devices to this name.
+              </p>
+              <div className="mt-3 flex flex-col gap-2">
+                <Button
+                  type="button"
+                  disabled={busy}
+                  className="h-11 w-full rounded-xl bg-violet-600 font-semibold text-white hover:bg-violet-500"
+                  onClick={() => onUseRoomOnly(existingRoom)}
+                >
+                  Open existing room
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  className="h-11 w-full rounded-xl border-cyan-400/40 bg-cyan-950/30 text-cyan-50"
+                  onClick={() => onAddNewInRoom(existingRoom)}
+                >
+                  <SearchIcon className="size-4 shrink-0" aria-hidden />
+                  Look up / add in this room
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  className="h-11 w-full rounded-xl"
+                  onClick={() => {
+                    setExistingRoom(null);
+                    setStep("assign");
+                  }}
+                >
+                  Continue — move devices here
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {createdRooms.length > 0 ? (
+            <div className="rounded-2xl border border-violet-400/25 bg-violet-950/20 px-3 py-3">
+              <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-violet-200/90">
+                Newly created rooms
+              </p>
+              <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto">
+                {createdRooms.map((r) => (
+                  <li key={`${r.name}-${r.at}`}>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setRoomName(r.name);
+                        setExistingRoom(findMatchingLocation(r.name, existingLocations));
+                      }}
+                      className="w-full truncate rounded-lg px-2 py-1.5 text-left text-sm font-medium text-violet-50 hover:bg-violet-950/50"
+                    >
+                      {r.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
             <AlertDialog.Close
@@ -192,8 +310,8 @@ function CreateAssignRoomForm({
             <Button
               type="button"
               size="lg"
-              disabled={busy}
-              className="touch-manipulation h-12 min-h-12 gap-2 rounded-2xl bg-violet-600 font-semibold text-white hover:bg-violet-500"
+              disabled={busy || Boolean(existingRoom)}
+              className="touch-manipulation h-12 min-h-12 gap-2 rounded-2xl bg-violet-600 font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
               onClick={goAssign}
             >
               Continue
@@ -299,10 +417,13 @@ function CreateAssignRoomForm({
               size="lg"
               disabled={busy}
               className="touch-manipulation h-12 min-h-12 gap-2 rounded-2xl border-cyan-400/40 bg-cyan-950/30 text-cyan-50 hover:bg-cyan-950/50"
-              onClick={() => onAddNewInRoom(resolvedRoom)}
+              onClick={() => {
+                markCreatedIfNew(resolvedRoom);
+                onAddNewInRoom(resolvedRoom);
+              }}
             >
-              <PackagePlus className="size-4 shrink-0" aria-hidden />
-              Add new device in this room
+              <SearchIcon className="size-4 shrink-0" aria-hidden />
+              Look up / add in this room
             </Button>
             <Button
               type="button"
@@ -310,7 +431,10 @@ function CreateAssignRoomForm({
               size="lg"
               disabled={busy}
               className="touch-manipulation h-12 min-h-12 gap-2 rounded-2xl"
-              onClick={() => onUseRoomOnly(resolvedRoom)}
+              onClick={() => {
+                markCreatedIfNew(resolvedRoom);
+                onUseRoomOnly(resolvedRoom);
+              }}
             >
               <MapPinPlusIcon className="size-4 shrink-0 opacity-90" aria-hidden />
               Just use this room (filter)
@@ -323,6 +447,7 @@ function CreateAssignRoomForm({
               className="touch-manipulation h-11 rounded-2xl"
               onClick={() => {
                 setFormError(null);
+                setExistingRoom(null);
                 setStep("name");
               }}
             >
@@ -344,6 +469,7 @@ export function CreateAssignRoomDialog({
   onMoveDevices,
   onAddNewInRoom,
   onUseRoomOnly,
+  onRoomCreated,
 }: CreateAssignRoomDialogProps) {
   return (
     <AlertDialog.Root
@@ -378,6 +504,7 @@ export function CreateAssignRoomDialog({
                 onMoveDevices={onMoveDevices}
                 onAddNewInRoom={onAddNewInRoom}
                 onUseRoomOnly={onUseRoomOnly}
+                onRoomCreated={onRoomCreated}
               />
             ) : null}
           </AlertDialog.Popup>
