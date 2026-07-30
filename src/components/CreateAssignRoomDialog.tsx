@@ -34,8 +34,6 @@ type CreateAssignRoomDialogProps = {
   onAddNewInRoom: (location: string) => void;
   /** Focus location filter on this room without moving devices. */
   onUseRoomOnly: (location: string) => void;
-  /** Fired when operator introduces a room name that was not already on file. */
-  onRoomCreated?: (location: string) => void;
 };
 
 function rowSearchBlob(row: InventoryItemRow): string {
@@ -58,7 +56,6 @@ function CreateAssignRoomForm({
   onMoveDevices,
   onAddNewInRoom,
   onUseRoomOnly,
-  onRoomCreated,
 }: Omit<CreateAssignRoomDialogProps, "open" | "formMountKey" | "onDismiss">) {
   const [roomName, setRoomName] = useState("");
   const [step, setStep] = useState<"name" | "assign">("name");
@@ -99,12 +96,6 @@ function CreateAssignRoomForm({
     });
   };
 
-  const markCreatedIfNew = (loc: string) => {
-    if (!findMatchingLocation(loc, existingLocations)) {
-      onRoomCreated?.(loc);
-    }
-  };
-
   const goAssign = () => {
     if (!resolvedRoom) {
       setFormError("Enter a room name (same format as Location on the list).");
@@ -138,7 +129,6 @@ function CreateAssignRoomForm({
       return;
     }
     setFormError(null);
-    markCreatedIfNew(resolvedRoom);
     onMoveDevices(resolvedRoom, [...selected]);
   };
 
@@ -390,7 +380,6 @@ function CreateAssignRoomForm({
               disabled={busy}
               className="touch-manipulation h-12 min-h-12 gap-2 rounded-2xl border-cyan-400/40 bg-cyan-950/30 text-cyan-50 hover:bg-cyan-950/50"
               onClick={() => {
-                markCreatedIfNew(resolvedRoom);
                 onAddNewInRoom(resolvedRoom);
               }}
             >
@@ -404,7 +393,6 @@ function CreateAssignRoomForm({
               disabled={busy}
               className="touch-manipulation h-12 min-h-12 gap-2 rounded-2xl"
               onClick={() => {
-                markCreatedIfNew(resolvedRoom);
                 onUseRoomOnly(resolvedRoom);
               }}
             >
@@ -441,7 +429,6 @@ export function CreateAssignRoomDialog({
   onMoveDevices,
   onAddNewInRoom,
   onUseRoomOnly,
-  onRoomCreated,
 }: CreateAssignRoomDialogProps) {
   return (
     <AlertDialog.Root
@@ -476,7 +463,6 @@ export function CreateAssignRoomDialog({
                 onMoveDevices={onMoveDevices}
                 onAddNewInRoom={onAddNewInRoom}
                 onUseRoomOnly={onUseRoomOnly}
-                onRoomCreated={onRoomCreated}
               />
             ) : null}
           </AlertDialog.Popup>

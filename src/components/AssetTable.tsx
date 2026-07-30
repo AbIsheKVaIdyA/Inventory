@@ -44,7 +44,6 @@ import {
   unmarkRoomDone,
   type DoneRoomRecord,
 } from "@/lib/done-rooms";
-import { recordCreatedRoom, findMatchingLocation } from "@/lib/location-rooms";
 import {
   getMostRecentLocation,
   recordLocationVisit,
@@ -57,7 +56,6 @@ import type { Asset } from "@/types/asset";
 
 import { AssetRow } from "@/components/AssetRow";
 import { InventoryAnalyticsView } from "@/components/InventoryAnalyticsView";
-import { NewCreatedRoomsControl } from "@/components/NewCreatedRoomsControl";
 import { DoneRoomsControl } from "@/components/DoneRoomsControl";
 import { CelebrationToast } from "@/components/CelebrationToast";
 import {
@@ -110,7 +108,6 @@ export function AssetTable({
   const [findInitialQuery, setFindInitialQuery] = useState<string | null>(null);
   const [pathVersion, setPathVersion] = useState(0);
   const [activityVersion, setActivityVersion] = useState(0);
-  const [roomsVersion, setRoomsVersion] = useState(0);
   const [doneRoomsVersion, setDoneRoomsVersion] = useState(0);
   const [doneRooms, setDoneRooms] = useState<DoneRoomRecord[]>([]);
   const [lastAddVersion, setLastAddVersion] = useState(0);
@@ -708,13 +705,6 @@ export function AssetTable({
         if (locationNorm) {
           recordLocationVisit(locationNorm);
           setPathVersion((v) => v + 1);
-          const knownBefore = inventoryRows
-            .map((r) => r.location?.trim() ?? "")
-            .filter(Boolean);
-          if (!findMatchingLocation(locationNorm, knownBefore)) {
-            recordCreatedRoom(locationNorm, userNow);
-            setRoomsVersion((v) => v + 1);
-          }
         }
         recordScanActivity({ type: "add", location: locationNorm });
         setActivityVersion((v) => v + 1);
@@ -738,7 +728,7 @@ export function AssetTable({
         setDiscoveredSaving(false);
       }
     },
-    [inventoryRows]
+    []
   );
 
   const handleMoveDevicesToRoom = useCallback(
@@ -1334,10 +1324,6 @@ export function AssetTable({
           setToastOpen(true);
           queueMicrotask(() => window.scrollTo({ top: 0, behavior: "smooth" }));
         }}
-        onRoomCreated={(loc) => {
-          recordCreatedRoom(loc);
-          setRoomsVersion((v) => v + 1);
-        }}
       />
       <Header
         currentDisplayName={scannerDisplayName}
@@ -1684,17 +1670,11 @@ export function AssetTable({
               </section>
             ) : null}
 
-            <NewCreatedRoomsControl
-              roomsVersion={roomsVersion}
-              inventoryRows={inventoryRows}
-              onSelectRoom={(loc) => setLocationFilterAndClearRoomSearch(loc)}
-              className="mt-3"
-            />
             <DoneRoomsControl
               roomsVersion={doneRoomsVersion}
               onOpenRoom={(loc) => setLocationFilterAndClearRoomSearch(loc)}
               onChanged={() => setDoneRoomsVersion((v) => v + 1)}
-              className="mt-2"
+              className="mt-3"
             />
 
             {/* PC: room tools + list side by side */}
