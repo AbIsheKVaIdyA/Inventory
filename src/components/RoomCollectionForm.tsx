@@ -29,7 +29,7 @@ const DEPARTMENTS = [
   "Systems Engineering",
 ] as const;
 
-const BUILDINGS = ["ECSW", "ECSN", "ECSS"] as const;
+const BUILDINGS = ["ECSW", "ECSN", "ECSS", "NESRL", "ROW"] as const;
 
 const fieldClass =
   "h-12 w-full rounded-2xl border border-border bg-background px-3.5 text-base text-foreground shadow-inner outline-none touch-manipulation focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
@@ -284,7 +284,7 @@ export function RoomCollectionForm() {
           </div>
           <div>
             <label htmlFor={`room-building-${pickerEpoch}`} className={labelClass}>
-              Building
+              Building / branch
             </label>
             <select
               key={`building-${pickerEpoch}`}
@@ -294,7 +294,7 @@ export function RoomCollectionForm() {
               defaultValue=""
             >
               <option value="" disabled>
-                Select building
+                Select building / branch
               </option>
               {BUILDINGS.map((name) => (
                 <option key={name} value={name}>

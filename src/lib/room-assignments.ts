@@ -33,6 +33,12 @@ export type RoomAssignmentInsert = {
   job_title: string;
 };
 
+/** Row as stored in `room_assignments` (authenticated read). */
+export type RoomAssignmentRow = RoomAssignmentInsert & {
+  id: string;
+  created_at: string;
+};
+
 export function draftRowToInsert(row: RoomDraftRow): RoomAssignmentInsert {
   return {
     department: row.department.trim(),

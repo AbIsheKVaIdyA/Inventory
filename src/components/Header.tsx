@@ -1,14 +1,23 @@
 "use client";
 
 import { ChevronDownIcon, LogOutIcon, UserRoundIcon } from "lucide-react";
+import Link from "next/link";
 
 import { cn } from "@/lib/utils";
+
+type HeaderNavItem = {
+  href: string;
+  label: string;
+  active?: boolean;
+};
 
 type HeaderProps = {
   title?: string;
   currentDisplayName: string;
   sessionEmail: string;
   onSignOut?: () => void;
+  /** Optional signed-in nav (Scan queue / Room submissions). */
+  nav?: HeaderNavItem[];
 };
 
 const userCardClass =
@@ -19,6 +28,7 @@ export function Header({
   currentDisplayName,
   sessionEmail,
   onSignOut,
+  nav,
 }: HeaderProps) {
   const userInner = (
     <>
@@ -34,12 +44,30 @@ export function Header({
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/80 bg-background/85 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-xl">
-      <div className="mx-auto flex w-full max-w-lg flex-col gap-4 px-4 pb-4 max-[361px]:px-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+      <div className="mx-auto flex w-full max-w-lg flex-col gap-4 px-4 pb-4 max-[361px]:px-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3 md:max-w-3xl lg:max-w-7xl lg:px-6">
         <div className="min-w-0 shrink pt-0.5">
           <p className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
             Inventory
           </p>
           <h1 className="mt-1 text-xl font-bold tracking-tight text-foreground sm:text-2xl">{title}</h1>
+          {nav && nav.length > 0 ? (
+            <nav aria-label="Signed-in pages" className="mt-3 flex flex-wrap gap-2">
+              {nav.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "inline-flex h-9 items-center rounded-xl border px-3 text-xs font-semibold touch-manipulation transition-colors",
+                    item.active
+                      ? "border-primary/40 bg-primary/15 text-foreground"
+                      : "border-border bg-card/60 text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                  )}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+          ) : null}
         </div>
 
         <div className="w-full sm:w-auto sm:max-w-[13rem] sm:items-end">
@@ -60,6 +88,17 @@ export function Header({
                 />
               </summary>
               <div className="absolute right-0 top-[calc(100%+0.35rem)] z-50 w-full min-w-[10.5rem] overflow-hidden rounded-xl border border-border bg-card py-1 shadow-lg shadow-black/25 ring-1 ring-white/[0.06]">
+                {nav?.map((item) =>
+                  item.active ? null : (
+                    <Link
+                      key={`menu-${item.href}`}
+                      href={item.href}
+                      className="flex h-11 w-full items-center px-3 text-left text-sm font-medium text-foreground hover:bg-muted/80 active:bg-muted touch-manipulation"
+                    >
+                      {item.label}
+                    </Link>
+                  )
+                )}
                 <button
                   type="button"
                   className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm font-medium text-foreground hover:bg-muted/80 active:bg-muted touch-manipulation"

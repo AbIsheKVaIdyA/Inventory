@@ -141,14 +141,16 @@ export function SerialLookupDialog({
 
   async function submitConfirm(e: FormEvent) {
     e.preventDefault();
-    if (!selectedId) return;
+    if (!selectedId || busy) return;
     const loc = resolveLocation();
     if (!loc.ok) {
       setFormError(loc.message);
       return;
     }
     setFormError(null);
-    await onConfirmMatch(selectedId, loc.value);
+    const id = selectedId;
+    const value = loc.value;
+    await onConfirmMatch(id, value);
   }
 
   function openManualAdd() {

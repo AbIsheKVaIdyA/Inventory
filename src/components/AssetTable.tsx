@@ -789,6 +789,10 @@ export function AssetTable({
 
     setMutationError(null);
     setFindLookupBusy(true);
+    // Close immediately so the queue updates aren't blocked behind the dialog.
+    setFindDialogOpen(false);
+    setFindInitialQuery(null);
+    setFindDialogMountKey((k) => k + 1);
 
     setInventoryRows((curr) => {
       const prev = curr.find((r) => r.id === rowId);
@@ -855,7 +859,6 @@ export function AssetTable({
       if (error) throw error;
 
       lookupRollbackRef.current = null;
-      setFindDialogOpen(false);
       recordLocationVisit(locationNorm);
       setPathVersion((v) => v + 1);
       const prevLoc = prev.location?.trim() || null;
@@ -1329,6 +1332,10 @@ export function AssetTable({
         currentDisplayName={scannerDisplayName}
         sessionEmail={scannerEmail}
         onSignOut={() => void onSignOut()}
+        nav={[
+          { href: "/dashboard", label: "Scan queue", active: true },
+          { href: "/dashboard/room-submissions", label: "Room submissions" },
+        ]}
       />
 
       <main

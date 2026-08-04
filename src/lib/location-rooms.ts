@@ -33,10 +33,10 @@ export function findMatchingLocation(
   return null;
 }
 
-/** Room-create chips: this inventory uses ECS only. */
+/** Prefill chips for Create room — ECS campus buildings. */
 export function buildingChipsFromLocations(_locations?: string[]): string[] {
   void _locations;
-  return ["ECS"];
+  return ["ECS", "ECSN", "ECSW"];
 }
 
 export function distinctLocationsFromRows(
