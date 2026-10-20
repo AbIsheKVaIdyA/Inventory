@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, type FormEvent, useEffect, useState } from "react";
 
 import { AuthInviteProcessingOverlay } from "@/components/AuthInviteProcessingOverlay";
+import { DemoSignIn } from "@/components/DemoSignIn";
+import { DEMO_LOGINS_ENABLED } from "@/lib/demo-accounts";
 import { Button } from "@/components/ui/button";
 import { hasCompletedInvitePassword } from "@/lib/auth-invite-metadata";
 import { cn } from "@/lib/utils";
@@ -61,7 +63,7 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next")?.startsWith("/") ? searchParams.get("next")! : "/dashboard";
+  const next = searchParams.get("next")?.startsWith("/") ? searchParams.get("next")! : "/";
   const errParam = sanitizeAuthUrlError(searchParams.get("error"));
   const infoParam = searchParams.get("info");
   const code = searchParams.get("code");
@@ -342,6 +344,8 @@ function LoginForm() {
             </Button>
           </form>
         )}
+
+        {DEMO_LOGINS_ENABLED && hasSupabaseConfig() ? <DemoSignIn disabled={busy} /> : null}
       </div>
     </>
   );

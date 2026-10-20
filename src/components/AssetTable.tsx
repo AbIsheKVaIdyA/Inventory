@@ -35,6 +35,7 @@ import {
   distinctLocationPickerOptionsFromRows,
 } from "@/lib/location-filter";
 import { textMatchesQuery } from "@/lib/inventory-search";
+import { navForRole, type AppRole } from "@/lib/roles";
 import { recordScanActivity, getDailyAnomalies } from "@/lib/scan-activity";
 import { getLastAdd, saveLastAdd } from "@/lib/last-add";
 import {
@@ -73,12 +74,14 @@ import { SerialLookupDialog } from "@/components/SerialLookupDialog";
 type AssetTableProps = {
   scannerEmail: string;
   scannerDisplayName: string;
+  role: AppRole;
   onSignOut: () => Promise<void>;
 };
 
 export function AssetTable({
   scannerEmail,
   scannerDisplayName,
+  role,
   onSignOut,
 }: AssetTableProps) {
   const [inventoryRows, setInventoryRows] = useState<InventoryItemRow[]>([]);
@@ -1332,10 +1335,7 @@ export function AssetTable({
         currentDisplayName={scannerDisplayName}
         sessionEmail={scannerEmail}
         onSignOut={() => void onSignOut()}
-        nav={[
-          { href: "/dashboard", label: "Scan queue", active: true },
-          { href: "/dashboard/room-submissions", label: "Room submissions" },
-        ]}
+        nav={navForRole(role, "/dashboard")}
       />
 
       <main

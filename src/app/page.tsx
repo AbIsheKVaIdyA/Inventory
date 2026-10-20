@@ -1,13 +1,9 @@
 import { redirect } from "next/navigation";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server-client";
+import { homePathForRole } from "@/lib/roles";
+import { getSessionProfile } from "@/lib/supabase/session-profile";
 
 export default async function HomePage() {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (user) redirect("/dashboard");
-  redirect("/login");
+  const profile = await getSessionProfile();
+  redirect(profile ? homePathForRole(profile.role) : "/login");
 }

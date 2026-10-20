@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 
+import { DEMO_LOGINS_ENABLED } from "@/lib/demo-accounts";
+
 /** Edge middleware budget — fail open to login redirect instead of 504. */
 const AUTH_CHECK_TIMEOUT_MS = 8_000;
 
@@ -99,18 +101,17 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
-  if ((path.startsWith("/dashboard") || path.startsWith("/set-password")) && !isAuthenticated) {
+  const signedInOnly = ["/dashboard", "/requests", "/department", "/admin", "/no-access", "/set-password"];
+  if (signedInOnly.some((p) => path === p || path.startsWith(`${p}/`)) && !isAuthenticated) {
     const login = new URL("/login", request.url);
     login.searchParams.set("next", `${path}${request.nextUrl.search}`);
     return NextResponse.redirect(login);
   }
 
-  if (path === "/login" && isAuthenticated) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
-  }
-
-  if ((path === "/" || path === "") && isAuthenticated) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+  // "/" picks each role's own landing page (src/app/page.tsx).
+  // In demo mode /login stays reachable while signed in so presenters can switch roles.
+  if (path === "/login" && isAuthenticated && !DEMO_LOGINS_ENABLED) {
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   if ((path === "/" || path === "") && !isAuthenticated) {

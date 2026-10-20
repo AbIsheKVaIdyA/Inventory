@@ -1,23 +1,19 @@
 "use client";
 
-import { ChevronDownIcon, LogOutIcon, UserRoundIcon } from "lucide-react";
+import { ChevronDownIcon, LogOutIcon, PresentationIcon, UserRoundIcon } from "lucide-react";
 import Link from "next/link";
 
+import { DEMO_LOGINS_ENABLED } from "@/lib/demo-accounts";
+import type { NavItem } from "@/lib/roles";
 import { cn } from "@/lib/utils";
-
-type HeaderNavItem = {
-  href: string;
-  label: string;
-  active?: boolean;
-};
 
 type HeaderProps = {
   title?: string;
   currentDisplayName: string;
   sessionEmail: string;
   onSignOut?: () => void;
-  /** Optional signed-in nav (Scan queue / Room submissions). */
-  nav?: HeaderNavItem[];
+  /** Signed-in pages this role can open (see `navForRole`). */
+  nav?: NavItem[];
 };
 
 const userCardClass =
@@ -99,6 +95,16 @@ export function Header({
                     </Link>
                   )
                 )}
+                {DEMO_LOGINS_ENABLED ? (
+                  <button
+                    type="button"
+                    className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm font-medium text-violet-100 hover:bg-muted/80 active:bg-muted touch-manipulation"
+                    onClick={() => void onSignOut()}
+                  >
+                    <PresentationIcon className="size-4 shrink-0 opacity-80" aria-hidden />
+                    Switch demo role
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm font-medium text-foreground hover:bg-muted/80 active:bg-muted touch-manipulation"

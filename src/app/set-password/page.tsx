@@ -29,7 +29,7 @@ export default function SetPasswordPage() {
 function SetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next")?.startsWith("/") ? searchParams.get("next")! : "/dashboard";
+  const next = searchParams.get("next")?.startsWith("/") ? searchParams.get("next")! : "/";
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");

@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   const otpType = searchParams.get("type");
   const next = searchParams.get("next")?.startsWith("/")
     ? searchParams.get("next")!
-    : "/dashboard";
+    : "/";
   const passwordSetupRedirect = `/set-password?next=${encodeURIComponent(next)}`;
   const validOtpTypes: EmailOtpType[] = [
     "email",

@@ -27,6 +27,20 @@ In Supabase **Authentication → URL configuration**, set **Site URL** and **Red
 
 Scans record **`scanned_by`** as the signed-in **email**. Only people you invite exist in Auth, so strangers cannot obtain an account from the app UI.
 
+## Roles
+
+Migration `0010_roles_departments.sql` adds a role per account (`user_profiles`), enforced by row level security:
+
+| Role | Lands on | Can use |
+|---|---|---|
+| Admin | `/admin` (overview) | Everything, plus **Users** (`/admin/users`) and **Room mapping** (`/admin/rooms`) |
+| ECS IT | `/requests` | Approve / reject devices registered by departments |
+| Department | `/department` | Their department's systems + **Register a device** |
+| Scan team | `/dashboard` | Scan queue and room submissions |
+| No access yet | `/no-access` | Nothing until an admin assigns a role |
+
+Accounts that exist when the migration runs become **Scan team**; new invites start as **No access yet**. Promote the first admins with `supabase/scripts/set_admins.sql`, then manage everyone else from `/admin/users`. Devices belong to a department through **Room mapping** (room → department).
+
 ## Commands
 
 ```bash

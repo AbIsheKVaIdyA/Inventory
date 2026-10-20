@@ -1,18 +1,26 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { ArrowLeftIcon, BarChart3Icon } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import {
+  ChartCard,
+  DonutChart,
+  EmptyChart,
+  HorizontalBars,
+  Kpi,
+  ProgressBars,
+  VerticalBars,
+  type ProgressRow,
+} from "@/components/charts";
 import { DailyAnomalySummary } from "@/components/DailyAnomalySummary";
+import { Button } from "@/components/ui/button";
 import {
   buildInventoryAnalytics,
+  buildingFromLocation,
   type AnalyticsRange,
-  type NamedCount,
 } from "@/lib/inventory-analytics";
 import type { InventoryItemRow } from "@/lib/inventory-map";
-
 import { cn } from "@/lib/utils";
 
 type InventoryAnalyticsViewProps = {
@@ -27,6 +35,31 @@ const RANGES: { id: AnalyticsRange; label: string }[] = [
   { id: "all", label: "14 days" },
 ];
 
+function overallProgress(rows: InventoryItemRow[]) {
+  let scanned = 0;
+  let notFound = 0;
+  let pending = 0;
+  const byBuilding = new Map<string, ProgressRow>();
+  for (const row of rows) {
+    if (row.scan_status === "scanned") scanned += 1;
+    else if (row.scan_status === "not_found") notFound += 1;
+    else pending += 1;
+    const building = buildingFromLocation(row.location);
+    const entry = byBuilding.get(building) ?? { label: building, done: 0, total: 0 };
+    entry.total += 1;
+    if (row.scan_status !== "pending") entry.done += 1;
+    byBuilding.set(building, entry);
+  }
+  return {
+    status: [
+      { label: "Scanned", value: scanned, tone: "emerald" as const },
+      { label: "Not found", value: notFound, tone: "red" as const },
+      { label: "Still to scan", value: pending, tone: "amber" as const },
+    ],
+    buildings: [...byBuilding.values()].sort((a, b) => b.total - a.total),
+  };
+}
+
 export function InventoryAnalyticsView({
   inventoryRows,
   activityVersion = 0,
@@ -37,6 +70,7 @@ export function InventoryAnalyticsView({
     () => buildInventoryAnalytics(inventoryRows, range),
     [inventoryRows, range]
   );
+  const overall = useMemo(() => overallProgress(inventoryRows), [inventoryRows]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -59,6 +93,15 @@ export function InventoryAnalyticsView({
             </p>
           </div>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <ChartCard title="Overall progress" subtitle="Every device in the inventory">
+          <DonutChart data={overall.status} centerLabel="devices" />
+        </ChartCard>
+        <ChartCard title="Progress by building" subtitle="Scanned or marked not found, out of total">
+          <ProgressBars rows={overall.buildings} />
+        </ChartCard>
       </div>
 
       <DailyAnomalySummary refreshKey={activityVersion} />
@@ -87,35 +130,32 @@ export function InventoryAnalyticsView({
         <Kpi label="New adds" value={stats.totals.added} tone="cyan" />
         <Kpi label="Rooms touched" value={stats.totals.roomsTouched} tone="amber" />
         <Kpi label="Buildings" value={stats.totals.buildingsTouched} tone="sky" />
-        <Kpi label="Still pending" value={stats.totals.pending} tone="muted" />
+        <Kpi label="Still pending" value={stats.totals.pending} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartCard title="New systems added" subtitle="Discovered-on-scan per day">
-          <VerticalBars data={stats.addsByDay} barClass="bg-cyan-500" />
+          <VerticalBars data={stats.addsByDay} tone="cyan" />
         </ChartCard>
         <ChartCard title="Resolutions" subtitle="Scanned + not found per day">
-          <VerticalBars data={stats.resolutionsByDay} barClass="bg-emerald-500" />
+          <VerticalBars data={stats.resolutionsByDay} tone="emerald" />
         </ChartCard>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ChartCard
-          title="Where (building)"
-          subtitle="Prefixes taken from locations on file"
-        >
-          {stats.byBuilding.length === 0 ? (
-            <EmptyChart />
-          ) : (
-            <HorizontalBars data={stats.byBuilding} barClass="bg-teal-500" />
-          )}
+        <ChartCard title="Where (building)" subtitle="Prefixes taken from locations on file">
+          <HorizontalBars
+            data={stats.byBuilding}
+            tone="teal"
+            emptyMessage="No data in this range yet."
+          />
         </ChartCard>
         <ChartCard title="Top rooms" subtitle="Most activity in this range">
-          {stats.topRooms.length === 0 ? (
-            <EmptyChart />
-          ) : (
-            <HorizontalBars data={stats.topRooms} barClass="bg-primary" />
-          )}
+          <HorizontalBars
+            data={stats.topRooms}
+            tone="violet"
+            emptyMessage="No data in this range yet."
+          />
         </ChartCard>
       </div>
 
@@ -124,9 +164,7 @@ export function InventoryAnalyticsView({
         subtitle="Locations that received at least one add"
       >
         {stats.roomsWithAdds.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No newly added systems in this range.
-          </p>
+          <EmptyChart message="No newly added systems in this range." />
         ) : (
           <ul className="divide-y divide-border/60">
             {stats.roomsWithAdds.map((r) => (
@@ -144,117 +182,5 @@ export function InventoryAnalyticsView({
         )}
       </ChartCard>
     </div>
-  );
-}
-
-function Kpi({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: "emerald" | "violet" | "cyan" | "amber" | "sky" | "muted";
-}) {
-  const toneClass = {
-    emerald: "text-emerald-400",
-    violet: "text-violet-300",
-    cyan: "text-cyan-300",
-    amber: "text-amber-300",
-    sky: "text-sky-300",
-    muted: "text-foreground",
-  }[tone];
-  return (
-    <div className="rounded-2xl border border-border bg-card/70 px-3 py-3 text-center shadow-sm">
-      <p className="text-[0.6rem] font-bold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
-      <p className={cn("mt-1 text-2xl font-bold tabular-nums", toneClass)}>{value}</p>
-    </div>
-  );
-}
-
-function ChartCard({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="rounded-2xl border border-border bg-card/60 p-4 shadow-md shadow-black/15">
-      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-      <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
-      <div className="mt-4">{children}</div>
-    </section>
-  );
-}
-
-function EmptyChart() {
-  return (
-    <p className="py-8 text-center text-sm text-muted-foreground">No data in this range yet.</p>
-  );
-}
-
-function VerticalBars({ data, barClass }: { data: NamedCount[]; barClass: string }) {
-  const max = Math.max(...data.map((d) => d.value), 1);
-  const dense = data.length > 8;
-  return (
-    <div
-      className={cn(
-        "flex h-44 items-end gap-1.5 sm:gap-2",
-        dense && "overflow-x-auto pb-1"
-      )}
-    >
-      {data.map((d) => (
-        <div
-          key={d.label}
-          className={cn(
-            "flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1",
-            dense && "min-w-[2.25rem] flex-none"
-          )}
-          title={`${d.label}: ${d.value}`}
-        >
-          <span className="text-[0.65rem] font-semibold tabular-nums text-muted-foreground">
-            {d.value > 0 ? d.value : ""}
-          </span>
-          <div className="flex w-full flex-1 items-end">
-            <div
-              className={cn("w-full rounded-t-md transition-[height]", barClass)}
-              style={{ height: `${Math.max((d.value / max) * 100, d.value > 0 ? 6 : 2)}%` }}
-            />
-          </div>
-          <span className="w-full truncate text-center text-[0.55rem] leading-tight text-muted-foreground sm:text-[0.6rem]">
-            {dense ? d.label.replace(/,.*/, "").slice(0, 6) : d.label.split(",")[0]}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function HorizontalBars({ data, barClass }: { data: NamedCount[]; barClass: string }) {
-  const max = Math.max(...data.map((d) => d.value), 1);
-  return (
-    <ul className="space-y-2.5">
-      {data.map((d) => (
-        <li key={d.label} className="grid grid-cols-[minmax(0,7rem)_1fr_auto] items-center gap-2 sm:grid-cols-[minmax(0,10rem)_1fr_auto]">
-          <span className="truncate text-xs font-medium text-foreground" title={d.label}>
-            {d.label}
-          </span>
-          <div className="h-2.5 overflow-hidden rounded-full bg-muted">
-            <div
-              className={cn("h-full rounded-full", barClass)}
-              style={{ width: `${(d.value / max) * 100}%` }}
-            />
-          </div>
-          <span className="w-8 text-right text-xs font-semibold tabular-nums text-muted-foreground">
-            {d.value}
-          </span>
-        </li>
-      ))}
-    </ul>
   );
 }

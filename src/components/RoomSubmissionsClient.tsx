@@ -15,29 +15,21 @@ import { Header } from "@/components/Header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { downloadRoomAssignmentsSpreadsheet } from "@/lib/download-room-assignments-xlsx";
 import type { RoomAssignmentRow } from "@/lib/room-assignments";
+import { navForRole, type AppRole } from "@/lib/roles";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser-client";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 
 type RoomSubmissionsClientProps = {
   scannerEmail: string;
   scannerDisplayName: string;
+  role: AppRole;
   onSignOut: () => Promise<void>;
 };
-
-function formatWhen(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  } catch {
-    return iso;
-  }
-}
 
 export function RoomSubmissionsClient({
   scannerEmail,
   scannerDisplayName,
+  role,
   onSignOut,
 }: RoomSubmissionsClientProps) {
   const [rows, setRows] = useState<RoomAssignmentRow[]>([]);
@@ -148,10 +140,7 @@ export function RoomSubmissionsClient({
         currentDisplayName={scannerDisplayName}
         sessionEmail={scannerEmail}
         onSignOut={() => void onSignOut()}
-        nav={[
-          { href: "/dashboard", label: "Scan queue" },
-          { href: "/dashboard/room-submissions", label: "Room submissions", active: true },
-        ]}
+        nav={navForRole(role, "/dashboard/room-submissions")}
       />
 
       <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-4 px-4 pb-8 pt-5 max-[361px]:px-3 md:max-w-3xl lg:max-w-5xl lg:px-6">
@@ -289,7 +278,7 @@ export function RoomSubmissionsClient({
                     {r.building} · {r.room_number}
                   </p>
                   <p className="text-[0.7rem] tabular-nums text-muted-foreground">
-                    {formatWhen(r.created_at)}
+                    {formatDateTime(r.created_at)}
                   </p>
                 </div>
                 <p className="mt-1 text-sm text-foreground">
